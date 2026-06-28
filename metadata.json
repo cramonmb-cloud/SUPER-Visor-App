@@ -1,0 +1,11 @@
+{
+  "name": "VisorApp - Supervision de Creditos",
+  "description": "Sistema de gestión y supervisión de préstamos con códigos QR, geolocalización y registro de garantías.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

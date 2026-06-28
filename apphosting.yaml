@@ -1,0 +1,21 @@
+# apphosting.yaml
+# Configuración para Firebase App Hosting
+# Documentación: https://firebase.google.com/docs/app-hosting/configure
+
+kind: "bundle"
+apiVersion: "v1"
+
+# Configuración del entorno de ejecución
+runConfig:
+  cpu: 1
+  memoryMiB: 512
+  concurrency: 80
+  maxInstances: 10
+  minInstances: 0
+
+# Variables de entorno y secretos
+env:
+  - variable: NODE_ENV
+    value: "production"
+  - variable: GEMINI_API_KEY
+    secret: GEMINI_API_KEY_SECRET # Debes crear este secreto en la consola de Firebase

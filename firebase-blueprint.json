@@ -1,0 +1,119 @@
+{
+  "entities": {
+    "Supervisor": {
+      "title": "Supervisor",
+      "description": "A field supervisor who registers clients and visits them.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "pin": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "financieraId": { "type": "string", "description": "Link to the associated Financiera" },
+        "canEditClients": { "type": "boolean" },
+        "canArchiveClients": { "type": "boolean" }
+      },
+      "required": ["id", "name", "pin", "createdAt"]
+    },
+    "SystemUser": {
+      "title": "System User (Viewer)",
+      "description": "An administrative user who can monitor supervisors and clients.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "pin": { "type": "string" },
+        "assignedSupervisorIds": { "type": "array", "items": { "type": "string" } },
+        "assignedFinancieraIds": { "type": "array", "items": { "type": "string" } },
+        "canCreateSupervisors": { "type": "boolean" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "name", "pin", "assignedSupervisorIds", "createdAt"]
+    },
+    "Financiera": {
+      "title": "Financiera",
+      "description": "A financial institution that manages its own supervisors and clients.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "logoUrl": { "type": "string" },
+        "logoGifUrl": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["id", "name", "createdAt"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "A client registered by a supervisor.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "creditAmount": { "type": "number" },
+        "cellphone": { "type": "string" },
+        "supervisorId": { "type": "string" },
+        "registeredBySupervisorId": { "type": "string" },
+        "financieraId": { "type": "string" },
+        "registeredAt": { "type": "number" },
+        "weekId": { "type": "string" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" }
+      },
+      "required": ["id", "name", "supervisorId", "registeredAt"]
+    },
+    "Visit": {
+      "title": "Visit",
+      "description": "A visit record for a client.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "clientId": { "type": "string" },
+        "supervisorId": { "type": "string" },
+        "weekId": { "type": "string" },
+        "timestamp": { "type": "number" },
+        "latitude": { "type": "number" },
+        "longitude": { "type": "number" }
+      },
+      "required": ["id", "clientId", "supervisorId", "timestamp"]
+    },
+    "QRCodeBatch": {
+      "title": "QR Code Batch",
+      "description": "A batch of generated QR codes.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "codes": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "number" },
+        "financieraId": { "type": "string" }
+      },
+      "required": ["id", "codes", "createdAt"]
+    },
+    "ApiKey": {
+      "title": "API Key",
+      "description": "External API access keys.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "key": { "type": "string" },
+        "permissions": { "type": "array", "items": { "type": "string" } },
+        "assignedFinancieraIds": { "type": "array", "items": { "type": "string" } },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "number" },
+        "lastUsedAt": { "type": "number" }
+      },
+      "required": ["id", "name", "key", "permissions", "active", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/supervisors/{supervisorId}": { "schema": "Supervisor", "description": "Supervisor records" },
+    "/systemUsers/{userId}": { "schema": "SystemUser", "description": "System user records" },
+    "/financieras/{financieraId}": { "schema": "Financiera", "description": "Financiera records" },
+    "/clients/{clientId}": { "schema": "Client", "description": "Client records" },
+    "/visits/{visitId}": { "schema": "Visit", "description": "Visit records" },
+    "/qrBatches/{batchId}": { "schema": "QRCodeBatch", "description": "QR code batch records" },
+    "/api_keys/{keyId}": { "schema": "ApiKey", "description": "External API keys" }
+  }
+}

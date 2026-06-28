@@ -1,0 +1,11 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{allPaths=**} {
+      // CAMBIO: Permitir lectura/escritura a todos (Modo de Desarrollo)
+      // Esto soluciona el error "storage/unauthorized"
+      // Cuando la app esté lista para producción, cambia esto a: if request.auth != null;
+      allow read, write: if true;
+    }
+  }
+}
