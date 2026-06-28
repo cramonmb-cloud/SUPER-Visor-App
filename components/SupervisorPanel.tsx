@@ -84,6 +84,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
   const [registrationError, setRegistrationError] = useState<{title: string, message: string} | null>(null); // NEW: Registration error modal
   const [showManualInput, setShowManualInput] = useState(false); // NEW: Manual QR entry
   const [manualCodeInput, setManualCodeInput] = useState(''); // NEW: Manual QR entry value
+  const [showCycleModal, setShowCycleModal] = useState(false); // NEW: Welcome modal for new cycle
+  const [hasCheckedCycle, setHasCheckedCycle] = useState(false); // NEW: Avoid showing welcome modal multiple times
   
   // NEW: State for existing client as guarantor
   const [aval1IsClient, setAval1IsClient] = useState(false);
@@ -854,6 +856,31 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         setCoincidenceAval(null);
     }
   }, [avalName, view, scanStatus, clients, isRenewalMode, ignoredAvalNames]);
+
+  // NEW: Detect if it's a new cycle with 0 visits for this supervisor and show welcome modal
+  useEffect(() => {
+    if (currentWeek && !hasCheckedCycle) {
+      const supervisorVisitsThisWeek = visits.filter(
+        v => v.supervisorId === supervisor.id && v.weekId === currentWeek.id
+      );
+      if (supervisorVisitsThisWeek.length === 0) {
+        setShowCycleModal(true);
+      }
+      setHasCheckedCycle(true);
+    }
+  }, [currentWeek, supervisor.id, visits, hasCheckedCycle]);
+
+  const getFormattedTodayDate = () => {
+    const date = new Date();
+    const options: Intl.DateTimeFormatOptions = { 
+      weekday: 'long', 
+      year: 'numeric', 
+      month: 'long', 
+      day: 'numeric' 
+    };
+    const formatted = date.toLocaleDateString('es-MX', options);
+    return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  };
 
   const handleSelectRenewalClient = (client: Client) => {
       setRenewalSourceClientId(client.id);
@@ -2773,7 +2800,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                       </div>
                                   </div>
                               ))}
-                           {visits.filter(v => v.clientId === selectedClientHistory.id).length === 0 && (
+                            {visits.filter(v => v.clientId === selectedClientHistory.id).length === 0 && (
                                <p className="text-[9px] font-bold text-slate-300 italic py-2 pr-4">Sin visitas registradas aún.</p>
                            )}
                         </div>
@@ -2802,6 +2829,81 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                />
            </div>
        )}
+
+        {/* MODAL BIENVENIDA NUEVO CICLO */}
+        <AnimatePresence>
+          {showCycleModal && currentWeek && (
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/80 p-4 backdrop-blur-xl"
+            >
+              <motion.div 
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 20 }}
+                className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-md overflow-hidden border border-slate-100"
+              >
+                {/* Header con gradiente premium */}
+                <div className="bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 p-8 flex flex-col items-center text-white text-center relative overflow-hidden">
+                  <div className="absolute -top-10 -right-10 w-36 h-36 bg-white/5 rounded-full blur-2xl" />
+                  <div className="absolute -bottom-10 -left-10 w-36 h-36 bg-indigo-500/10 rounded-full blur-2xl" />
+                  
+                  <div className="w-20 h-20 bg-white/10 rounded-[2.5rem] flex items-center justify-center mb-4 backdrop-blur-md border border-white/20 shadow-inner">
+                    <Calendar className="w-10 h-10 text-white" />
+                  </div>
+                  
+                  <p className="text-[10px] font-black tracking-[0.2em] text-indigo-200 uppercase mb-1">
+                    Bienvenido al Sistema
+                  </p>
+                  <h3 className="text-2xl font-black tracking-tight leading-tight uppercase">
+                    {supervisorFinanciera?.name || 'Financiera'}
+                  </h3>
+                </div>
+                
+                {/* Contenido */}
+                <div className="p-8 space-y-8">
+                  {/* Ciclo / Semana */}
+                  <div className="bg-indigo-50/50 rounded-3xl p-5 border border-indigo-100/50 text-center">
+                    <span className="text-[9px] font-black text-indigo-500 uppercase tracking-widest block mb-2">
+                      Ciclo / Semana Activa
+                    </span>
+                    <span className="text-xl font-extrabold text-indigo-950 uppercase tracking-tight block">
+                      {currentWeek.name}
+                    </span>
+                  </div>
+
+                  {/* Fecha del día en curso */}
+                  <div className="bg-slate-50 rounded-3xl p-5 border border-slate-100 text-center">
+                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-2">
+                      Fecha del Día en Curso
+                    </span>
+                    <span className="text-base font-bold text-slate-850 block">
+                      {getFormattedTodayDate()}
+                    </span>
+                  </div>
+
+                  <div className="text-center space-y-1">
+                    <p className="text-slate-550 font-black uppercase text-[11px] tracking-wider leading-relaxed">
+                      No tienes visitas registradas aún para este ciclo.
+                    </p>
+                    <p className="text-slate-400 font-bold text-[10px] tracking-wide uppercase">
+                      Presiona el botón de abajo para comenzar a registrar tus visitas.
+                    </p>
+                  </div>
+
+                  <button 
+                    onClick={() => setShowCycleModal(false)}
+                    className="w-full py-5 bg-gradient-to-r from-indigo-600 to-violet-750 hover:from-indigo-700 hover:to-violet-850 text-white rounded-2xl font-black uppercase text-xs tracking-[0.2em] shadow-lg shadow-indigo-150 transition-all active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    ¡Comenzar Ciclo!
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
     </div>
   );
 };
