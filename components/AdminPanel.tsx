@@ -247,7 +247,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [filterWeekId, setFilterWeekId] = useState<string>('CURRENT');
   const [filterFinancieraId, setFilterFinancieraId] = useState<string>('ALL');
   const [clientSearchTerm, setClientSearchTerm] = useState('');
-  const [clientCompletionFilter, setClientCompletionFilter] = useState<'ALL' | 'COMPLETE' | 'INCOMPLETE' | 'RENEWAL'>('ALL');
+  const [activeCompletionFilters, setActiveCompletionFilters] = useState<('COMPLETE' | 'INCOMPLETE' | 'RENEWAL')[]>([]);
   const [guarantorSearchTerm, setGuarantorSearchTerm] = useState('');
   const [clientsPage, setClientsPage] = useState(1);
   const [clientsPerPage, setClientsPerPage] = useState(40);
@@ -260,7 +260,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   // Reset pagination when filters change
   useEffect(() => {
     setClientsPage(1);
-  }, [clientSearchTerm, filterWeekId, filterFinancieraId, filterSupervisorId, clientCompletionFilter]);
+  }, [clientSearchTerm, filterWeekId, filterFinancieraId, filterSupervisorId, activeCompletionFilters]);
 
   useEffect(() => {
     setGuarantorsPage(1);
@@ -522,13 +522,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   });
 
   const filteredClients = baseFilteredClients.filter(c => {
-      if (clientCompletionFilter === 'ALL') return true;
-      if (clientCompletionFilter === 'RENEWAL') {
-          return c.isRenewal || data.visits.some(v => v.clientId === c.id && v.isRenewal);
-      }
-      const fin = data.financieras.find(f => f.id === c.financieraId);
-      const isComplete = checkClientCompleteness(c, fin).isComplete;
-      return clientCompletionFilter === 'COMPLETE' ? isComplete : !isComplete;
+      if (activeCompletionFilters.length === 0) return true;
+      return activeCompletionFilters.every(filter => {
+          if (filter === 'RENEWAL') {
+              return c.isRenewal || data.visits.some(v => v.clientId === c.id && v.isRenewal);
+          }
+          const fin = data.financieras.find(f => f.id === c.financieraId);
+          const isComplete = checkClientCompleteness(c, fin).isComplete;
+          return filter === 'COMPLETE' ? isComplete : !isComplete;
+      });
   }).sort((a, b) => (b.registeredAt || 0) - (a.registeredAt || 0));
 
   // Pagination for clients
@@ -1674,75 +1676,96 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                     const incompleteFiltered = totalFiltered - completeFiltered;
                     const renewalsFiltered = baseFilteredClients.filter(c => c.isRenewal || data.visits.some(v => v.clientId === c.id && v.isRenewal)).length;
 
+                    const toggleFilter = (filter: 'COMPLETE' | 'INCOMPLETE' | 'RENEWAL') => {
+                        setActiveCompletionFilters(prev => {
+                            if (prev.includes(filter)) {
+                                return prev.filter(f => f !== filter);
+                            } else {
+                                let next = [...prev];
+                                if (filter === 'COMPLETE') {
+                                    next = next.filter(f => f !== 'INCOMPLETE');
+                                } else if (filter === 'INCOMPLETE') {
+                                    next = next.filter(f => f !== 'COMPLETE');
+                                }
+                                return [...next, filter];
+                            }
+                        });
+                    };
+
+                    const isAllActive = activeCompletionFilters.length === 0;
+                    const isCompleteActive = activeCompletionFilters.includes('COMPLETE');
+                    const isIncompleteActive = activeCompletionFilters.includes('INCOMPLETE');
+                    const isRenewalActive = activeCompletionFilters.includes('RENEWAL');
+
                     return (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                             {/* Card 1: Total */}
                             <div 
-                                onClick={() => setClientCompletionFilter('ALL')}
-                                className={`relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 flex items-center justify-between group cursor-pointer transition-all duration-300 ${clientCompletionFilter === 'ALL' ? 'border-indigo-600 bg-white shadow-md ring-4 ring-indigo-500/10 scale-[1.02]' : 'border-slate-100 hover:border-indigo-200'}`}
+                                onClick={() => setActiveCompletionFilters([])}
+                                className={`relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 flex items-center justify-between group cursor-pointer transition-all duration-300 ${isAllActive ? 'border-indigo-600 bg-white shadow-md ring-4 ring-indigo-500/10 scale-[1.02]' : 'border-slate-100 hover:border-indigo-200'}`}
                             >
                                 <div className="space-y-1">
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Clientes en Filtro</span>
                                     <span className="text-3xl font-black text-slate-800 tracking-tight block">{totalFiltered}</span>
                                 </div>
-                                <div className={`p-4 rounded-2xl transition-all duration-300 ${clientCompletionFilter === 'ALL' ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'}`}>
+                                <div className={`p-4 rounded-2xl transition-all duration-300 ${isAllActive ? 'bg-indigo-600 text-white' : 'bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white'}`}>
                                     <Users className="w-6 h-6" />
                                 </div>
                             </div>
 
                             {/* Card 2: Completos */}
                             <div 
-                                onClick={() => setClientCompletionFilter('COMPLETE')}
-                                className={`relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 flex items-center justify-between group cursor-pointer transition-all duration-300 ${clientCompletionFilter === 'COMPLETE' ? 'border-green-600 bg-white shadow-md ring-4 ring-green-500/10 scale-[1.02]' : 'border-slate-100 hover:border-green-200'}`}
+                                onClick={() => toggleFilter('COMPLETE')}
+                                className={`relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 flex items-center justify-between group cursor-pointer transition-all duration-300 ${isCompleteActive ? 'border-green-600 bg-white shadow-md ring-4 ring-green-500/10 scale-[1.02]' : 'border-slate-100 hover:border-green-200'}`}
                             >
                                 <div className="space-y-1">
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Clientes Completos</span>
                                     <div className="flex items-baseline gap-2">
                                         <span className="text-3xl font-black text-slate-800 tracking-tight">{completeFiltered}</span>
-                                        <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${clientCompletionFilter === 'COMPLETE' ? 'bg-white text-green-700' : 'bg-green-50 text-green-600'}`}>
+                                        <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${isCompleteActive ? 'bg-white text-green-700' : 'bg-green-50 text-green-600'}`}>
                                             {totalFiltered > 0 ? ((completeFiltered / totalFiltered) * 100).toFixed(0) : 0}%
                                         </span>
                                     </div>
                                 </div>
-                                <div className={`p-4 rounded-2xl transition-all duration-300 ${clientCompletionFilter === 'COMPLETE' ? 'bg-green-600 text-white' : 'bg-green-50 text-green-600 group-hover:bg-green-600 group-hover:text-white'}`}>
+                                <div className={`p-4 rounded-2xl transition-all duration-300 ${isCompleteActive ? 'bg-green-600 text-white' : 'bg-green-50 text-green-600 group-hover:bg-green-600 group-hover:text-white'}`}>
                                     <CheckCircle className="w-6 h-6" />
                                 </div>
                             </div>
 
                             {/* Card 3: Incompletos */}
                             <div 
-                                onClick={() => setClientCompletionFilter('INCOMPLETE')}
-                                className={`relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 flex items-center justify-between group cursor-pointer transition-all duration-300 ${clientCompletionFilter === 'INCOMPLETE' ? 'border-rose-600 bg-white shadow-md ring-4 ring-rose-500/10 scale-[1.02]' : 'border-slate-100 hover:border-rose-200'}`}
+                                onClick={() => toggleFilter('INCOMPLETE')}
+                                className={`relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 flex items-center justify-between group cursor-pointer transition-all duration-300 ${isIncompleteActive ? 'border-rose-600 bg-white shadow-md ring-4 ring-rose-500/10 scale-[1.02]' : 'border-slate-100 hover:border-rose-200'}`}
                             >
                                 <div className="space-y-1">
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Clientes Incompletos</span>
                                     <div className="flex items-baseline gap-2">
                                         <span className="text-3xl font-black text-slate-800 tracking-tight">{incompleteFiltered}</span>
-                                        <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${clientCompletionFilter === 'INCOMPLETE' ? 'bg-white text-rose-700' : 'bg-rose-50 text-rose-600'}`}>
+                                        <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${isIncompleteActive ? 'bg-white text-rose-700' : 'bg-rose-50 text-rose-600'}`}>
                                             {totalFiltered > 0 ? ((incompleteFiltered / totalFiltered) * 100).toFixed(0) : 0}%
                                         </span>
                                     </div>
                                 </div>
-                                <div className={`p-4 rounded-2xl transition-all duration-300 ${clientCompletionFilter === 'INCOMPLETE' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white'}`}>
+                                <div className={`p-4 rounded-2xl transition-all duration-300 ${isIncompleteActive ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white'}`}>
                                     <AlertTriangle className="w-6 h-6" />
                                 </div>
                             </div>
 
                             {/* Card 4: Renovaciones */}
                             <div 
-                                onClick={() => setClientCompletionFilter('RENEWAL')}
-                                className={`relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 flex items-center justify-between group cursor-pointer transition-all duration-300 ${clientCompletionFilter === 'RENEWAL' ? 'border-amber-600 bg-white shadow-md ring-4 ring-amber-500/10 scale-[1.02]' : 'border-slate-100 hover:border-amber-200'}`}
+                                onClick={() => toggleFilter('RENEWAL')}
+                                className={`relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 flex items-center justify-between group cursor-pointer transition-all duration-300 ${isRenewalActive ? 'border-amber-600 bg-white shadow-md ring-4 ring-amber-500/10 scale-[1.02]' : 'border-slate-100 hover:border-amber-200'}`}
                             >
                                 <div className="space-y-1">
                                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Renovaciones</span>
                                     <div className="flex items-baseline gap-2">
                                         <span className="text-3xl font-black text-slate-800 tracking-tight">{renewalsFiltered}</span>
-                                        <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${clientCompletionFilter === 'RENEWAL' ? 'bg-white text-amber-700' : 'bg-amber-50 text-amber-600'}`}>
+                                        <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${isRenewalActive ? 'bg-white text-amber-700' : 'bg-amber-50 text-amber-600'}`}>
                                             {totalFiltered > 0 ? ((renewalsFiltered / totalFiltered) * 100).toFixed(0) : 0}%
                                         </span>
                                     </div>
                                 </div>
-                                <div className={`p-4 rounded-2xl transition-all duration-300 ${clientCompletionFilter === 'RENEWAL' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white'}`}>
+                                <div className={`p-4 rounded-2xl transition-all duration-300 ${isRenewalActive ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white'}`}>
                                     <RotateCcw className="w-6 h-6" />
                                 </div>
                             </div>
