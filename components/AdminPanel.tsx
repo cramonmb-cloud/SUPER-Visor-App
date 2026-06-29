@@ -1813,6 +1813,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 <th className="py-4 px-4 w-12 text-center">#</th>
                                 <th className="py-4 px-4">Cliente</th>
                                 <th className="py-4 px-4">Financiera</th>
+                                <th className="py-4 px-4">Registró</th>
                                 <th className="py-4 px-4 text-center">Crédito</th>
                                 <th className="py-4 px-4 text-center">Última Visita</th>
                                 <th className="py-4 px-4 text-center">Aval Verif.</th>
@@ -1825,6 +1826,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 const realIndex = (clientsPage - 1) * clientsPerPage + index + 1;
                                 const financiera = data.financieras.find(f => f.id === client.financieraId);
                                 const completion = checkClientCompleteness(client, financiera);
+                                
+                                const regSupervisor = data.supervisors.find(s => s.id === client.registeredBySupervisorId || s.id === client.supervisorId);
+                                const supervisorFirstName = regSupervisor ? regSupervisor.name.split(' ')[0].toUpperCase() : 'SIN ASIGNAR';
                                 
                                 // Calcular la última visita real
                                 const clientVisits = data.visits.filter(v => v.clientId === client.id);
@@ -1874,6 +1878,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                         </td>
                                         <td className="py-4 px-4 font-bold text-indigo-600 text-[10px] uppercase">
                                             {data.financieras.find(f => f.id === client.financieraId)?.name || 'SIN ASIGNAR'}
+                                        </td>
+                                        <td className="py-4 px-4 font-black text-slate-600 text-[10px] uppercase">
+                                            {supervisorFirstName}
                                         </td>
                                         <td className="py-4 px-4 text-center font-black text-indigo-600">${client.creditAmount || 0}</td>
                                         
