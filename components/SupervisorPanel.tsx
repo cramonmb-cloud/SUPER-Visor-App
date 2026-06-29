@@ -131,7 +131,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
   const [showCompletedFacade, setShowCompletedFacade] = useState(false);
   const [showCompletedAvalPhoto, setShowCompletedAvalPhoto] = useState(false);
   const [showCompletedGuarantees, setShowCompletedGuarantees] = useState(false);
-  const [onlyShowPending, setOnlyShowPending] = useState(true);
+  const [onlyShowPending, setOnlyShowPending] = useState(false);
   
   // Determine minGuarantees: Prefer financiera-specific setting, fallback to global
   const supervisorFinanciera = financieras.find(f => f.id === supervisor.financieraId);
