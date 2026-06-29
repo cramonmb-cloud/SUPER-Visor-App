@@ -15,17 +15,24 @@ import {
     orderBy 
 } from "firebase/firestore";
 
+// Load environment variables if .env file exists (Node 20.12+)
+try {
+    process.loadEnvFile();
+} catch (e) {
+    // In production or host environments, variables are loaded from the system environment.
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Firebase Config from services/firebase.ts
 const firebaseConfig = {
-    apiKey: "AIzaSyAGNlZB0i0pnqRb7vpigx0xAzzVVYVm1cY",
-    authDomain: "studio-9848664260-1b715.firebaseapp.com",
-    projectId: "studio-9848664260-1b715",
-    storageBucket: "studio-9848664260-1b715.firebasestorage.app",
-    messagingSenderId: "936554709602",
-    appId: "1:936554709602:web:dba997370fc5d7e5f3c73b"
+    apiKey: process.env.VITE_FIREBASE_API_KEY,
+    authDomain: process.env.VITE_FIREBASE_AUTH_DOMAIN,
+    projectId: process.env.VITE_FIREBASE_PROJECT_ID,
+    storageBucket: process.env.VITE_FIREBASE_STORAGE_BUCKET,
+    messagingSenderId: process.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+    appId: process.env.VITE_FIREBASE_APP_ID
 };
 
 // Initialize Firebase Client SDK (Works with API Key, doesn't need ADC)
