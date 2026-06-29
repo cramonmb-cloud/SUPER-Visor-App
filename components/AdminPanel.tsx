@@ -247,7 +247,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [filterWeekId, setFilterWeekId] = useState<string>('CURRENT');
   const [filterFinancieraId, setFilterFinancieraId] = useState<string>('ALL');
   const [clientSearchTerm, setClientSearchTerm] = useState('');
-  const [clientCompletionFilter, setClientCompletionFilter] = useState<'ALL' | 'COMPLETE' | 'INCOMPLETE'>('ALL');
+  const [clientCompletionFilter, setClientCompletionFilter] = useState<'ALL' | 'COMPLETE' | 'INCOMPLETE' | 'RENEWAL'>('ALL');
   const [guarantorSearchTerm, setGuarantorSearchTerm] = useState('');
   const [clientsPage, setClientsPage] = useState(1);
   const [clientsPerPage, setClientsPerPage] = useState(40);
@@ -523,6 +523,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const filteredClients = baseFilteredClients.filter(c => {
       if (clientCompletionFilter === 'ALL') return true;
+      if (clientCompletionFilter === 'RENEWAL') {
+          return c.isRenewal || data.visits.some(v => v.clientId === c.id && v.isRenewal);
+      }
       const fin = data.financieras.find(f => f.id === c.financieraId);
       const isComplete = checkClientCompleteness(c, fin).isComplete;
       return clientCompletionFilter === 'COMPLETE' ? isComplete : !isComplete;
@@ -1665,14 +1668,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                     </div>
                 </div>
 
-                {/* Stats Cards */}
                 {(() => {
                     const totalFiltered = baseFilteredClients.length;
                     const completeFiltered = baseFilteredClients.filter(c => checkClientCompleteness(c, data.financieras.find(f => f.id === c.financieraId)).isComplete).length;
                     const incompleteFiltered = totalFiltered - completeFiltered;
+                    const renewalsFiltered = baseFilteredClients.filter(c => c.isRenewal || data.visits.some(v => v.clientId === c.id && v.isRenewal)).length;
 
                     return (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                             {/* Card 1: Total */}
                             <div 
                                 onClick={() => setClientCompletionFilter('ALL')}
@@ -1722,6 +1725,25 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 </div>
                                 <div className={`p-4 rounded-2xl transition-all duration-300 ${clientCompletionFilter === 'INCOMPLETE' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-600 group-hover:bg-rose-600 group-hover:text-white'}`}>
                                     <AlertTriangle className="w-6 h-6" />
+                                </div>
+                            </div>
+
+                            {/* Card 4: Renovaciones */}
+                            <div 
+                                onClick={() => setClientCompletionFilter('RENEWAL')}
+                                className={`relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 flex items-center justify-between group cursor-pointer transition-all duration-300 ${clientCompletionFilter === 'RENEWAL' ? 'border-amber-600 bg-white shadow-md ring-4 ring-amber-500/10 scale-[1.02]' : 'border-slate-100 hover:border-amber-200'}`}
+                            >
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Renovaciones</span>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-3xl font-black text-slate-800 tracking-tight">{renewalsFiltered}</span>
+                                        <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${clientCompletionFilter === 'RENEWAL' ? 'bg-white text-amber-700' : 'bg-amber-50 text-amber-600'}`}>
+                                            {totalFiltered > 0 ? ((renewalsFiltered / totalFiltered) * 100).toFixed(0) : 0}%
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className={`p-4 rounded-2xl transition-all duration-300 ${clientCompletionFilter === 'RENEWAL' ? 'bg-amber-600 text-white' : 'bg-amber-50 text-amber-600 group-hover:bg-amber-600 group-hover:text-white'}`}>
+                                    <RotateCcw className="w-6 h-6" />
                                 </div>
                             </div>
                         </div>

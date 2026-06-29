@@ -121,6 +121,7 @@ export interface Client {
   comments?: string; // NEW: Optional comments about the client
   weekId?: string; // NEW: Links client to the week they were registered in
   registeredBySupervisorId?: string; // NEW: Track who originally registered the client
+  isRenewal?: boolean; // NEW: Mark if client registration was a renewal
 }
 
 export interface WorkWeek {

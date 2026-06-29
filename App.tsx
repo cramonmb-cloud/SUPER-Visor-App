@@ -344,7 +344,8 @@ const App: React.FC = () => {
       registeredBySupervisorId: supervisor.id, // NEW: Track who registered them
       financieraId: supervisor.financieraId || '', // Inherit from supervisor
       registeredAt: Date.now(),
-      weekId: currentWeek.id // NEW: Explicitly link to current active week
+      weekId: currentWeek.id, // NEW: Explicitly link to current active week
+      isRenewal: !!isRenewal
     });
 
     if (isRenewal && originalClientId && originalClientId !== qrId) {
