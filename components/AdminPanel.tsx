@@ -28,8 +28,8 @@ interface AdminPanelProps {
   onAddSystemUser: (name: string, pin: string, supervisorIds: string[], canCreateSupervisors: boolean, canManageWeeks: boolean, assignedFinancieraIds: string[], role: UserRole) => void;
   onUpdateSystemUser: (id: string, name: string, pin: string, supervisorIds: string[], canCreateSupervisors: boolean, canManageWeeks: boolean, assignedFinancieraIds: string[], role: UserRole) => void;
   onDeleteSystemUser: (id: string) => void;
-  onAddFinanciera: (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean) => void;
-  onUpdateFinanciera: (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean) => void;
+  onAddFinanciera: (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number) => void;
+  onUpdateFinanciera: (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number) => void;
   onDeleteFinanciera: (id: string) => void;
   onDeleteQRBatch: (batchId: string) => void;
   onBatchUpdateSupervisors: (ids: string[], data: Partial<Supervisor>) => void;
@@ -100,7 +100,7 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
                 if (!g.name || !g.address || !g.cellphone) {
                     missing.push(`Datos incompletos Aval ${i+1}`);
                 }
-                if (financiera?.requireFacade !== false && !g.facadeUrl) {
+                if (financiera?.requireGuarantorFacade !== false && !g.facadeUrl) {
                     missing.push(`Fachada Aval ${i+1}`);
                 }
             });
@@ -109,7 +109,7 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
             if (!client.avalAddress || !client.avalCellphone) {
                  missing.push('Datos Aval Principal');
             }
-            if (financiera?.requireFacade !== false && !client.avalFacadeUrl && !client.avalVisitTimestamp) {
+            if (financiera?.requireGuarantorFacade !== false && !client.avalFacadeUrl && !client.avalVisitTimestamp) {
                  missing.push(`Fachada Aval Principal`);
             }
         }
@@ -137,6 +137,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const [activeTab, setActiveTab] = useState<'supervisors' | 'qrs' | 'clients' | 'settings' | 'map' | 'avales'>('supervisors');
   const [settingsSubTab, setSettingsSubTab] = useState<'general' | 'financieras' | 'semanas' | 'usuarios' | 'administradores' | 'api' | 'mantenimiento'>('general');
+  const [isSettingsMenuExpanded, setIsSettingsMenuExpanded] = useState(false);
   const [isSearchingGlobal, setIsSearchingGlobal] = useState(false);
   
   // MODALS STATE
@@ -188,6 +189,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [finRequireGuaranteesForAval, setFinRequireGuaranteesForAval] = useState(false);
   const [finMinGuaranteesForAval, setFinMinGuaranteesForAval] = useState<number>(0);
   const [finRequireGuarantorPhoto, setFinRequireGuarantorPhoto] = useState(false);
+  const [finRequireGuarantorFacade, setFinRequireGuarantorFacade] = useState(true);
+  const [finMaxClientActiveLoans, setFinMaxClientActiveLoans] = useState<number>(1);
+  const [finMaxAvalRegistrations, setFinMaxAvalRegistrations] = useState<number>(2);
+  const [finMaxClientAsAval, setFinMaxClientAsAval] = useState<number>(2);
   const [ruleMin, setRuleMin] = useState('');
   const [ruleMax, setRuleMax] = useState('');
   const [ruleGuarantors, setRuleGuarantors] = useState('1');
@@ -752,9 +757,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   };
 
   const toggleSysUserFinanciera = (finId: string) => {
-      setSysUserSelectedFins(prev => 
-        prev.includes(finId) ? prev.filter(id => id !== finId) : [...prev, finId]
-      );
+      setSysUserSelectedFins(prev => {
+        const isRemoving = prev.includes(finId);
+        if (isRemoving) {
+            const supsToRemove = fullSupervisorsList.filter(s => s.financieraId === finId).map(s => s.id);
+            setSysUserSelectedSups(curr => curr.filter(id => !supsToRemove.includes(id)));
+            return prev.filter(id => id !== finId);
+        } else {
+            return [...prev, finId];
+        }
+      });
   };
 
   const handleSysUserSubmit = (e: React.FormEvent) => {
@@ -797,10 +809,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       e.preventDefault();
       if (!finName) return;
       if (editingFin) {
-          onUpdateFinanciera(editingFin.id, finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto);
+          onUpdateFinanciera(editingFin.id, finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto, finRequireGuarantorFacade, finMaxClientActiveLoans, finMaxAvalRegistrations, finMaxClientAsAval);
           setEditingFin(null);
       } else {
-          onAddFinanciera(finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto);
+          onAddFinanciera(finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto, finRequireGuarantorFacade, finMaxClientActiveLoans, finMaxAvalRegistrations, finMaxClientAsAval);
       }
       setFinName('');
       setFinMinGuarantees(0);
@@ -809,6 +821,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setFinRequireGuaranteesForAval(false);
       setFinMinGuaranteesForAval(0);
       setFinRequireGuarantorPhoto(false);
+      setFinRequireGuarantorFacade(true);
+      setFinMaxClientActiveLoans(1);
+      setFinMaxAvalRegistrations(2);
+      setFinMaxClientAsAval(2);
       setFinLogoUrl('');
       setFinLogoGifUrl('');
       setFinGuarantorRules([]);
@@ -2390,70 +2406,86 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
         {/* AJUSTES */}
         {activeTab === 'settings' && (isSuperAdmin || viewerCanManageWeeks) && (
-            <div className="p-4 md:p-8 max-w-7xl mx-auto">
-                <div className="flex flex-col md:flex-row gap-8 min-h-[600px]">
+            <div className="p-4 md:p-8 max-w-[1600px] w-full mx-auto">
+                <div className="flex flex-col lg:flex-row gap-8 min-h-[750px]">
                     {/* Sidebar de Navegación de Ajustes */}
-                    <aside className="w-full md:w-64 flex flex-row md:flex-col gap-2 overflow-x-auto no-scrollbar md:overflow-visible">
+                    <aside className={`w-full ${isSettingsMenuExpanded ? 'lg:w-72' : 'lg:w-24'} flex flex-row lg:flex-col gap-2 overflow-x-auto no-scrollbar lg:overflow-visible bg-slate-50/50 p-4 rounded-[2.5rem] border border-slate-100/80 flex-shrink-0 backdrop-blur-sm transition-all duration-300`}>
+                        {/* Botón de colapsar/desplegar en Desktop */}
+                        <button 
+                            onClick={() => setIsSettingsMenuExpanded(!isSettingsMenuExpanded)} 
+                            className="hidden lg:flex items-center justify-center p-3.5 mb-2 rounded-2xl bg-white border border-slate-200/60 text-slate-500 hover:text-indigo-600 hover:shadow-sm active:scale-95 transition-all"
+                            title={isSettingsMenuExpanded ? "Contraer menú" : "Desplegar menú"}
+                        >
+                            {isSettingsMenuExpanded ? <ChevronLeft className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                        </button>
+
                         {isSuperAdmin && (
                             <button 
                                 onClick={() => setSettingsSubTab('general')} 
-                                className={`flex-1 md:flex-none flex items-center gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'general' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-[1.02]' : 'text-slate-500 hover:bg-slate-100 hover:text-indigo-600'}`}
+                                className={`flex-1 lg:flex-none flex items-center ${isSettingsMenuExpanded ? 'lg:justify-start' : 'lg:justify-center'} gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'general' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100 scale-[1.02]' : 'text-slate-500 hover:bg-white hover:shadow-sm hover:text-indigo-600'}`}
                             >
-                                <Settings className="w-4 h-4" /> General
+                                <Settings className="w-4 h-4 flex-shrink-0" />
+                                <span className={`transition-all duration-200 ${isSettingsMenuExpanded ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>General</span>
                             </button>
                         )}
                         {isSuperAdmin && (
                             <button 
                                 onClick={() => setSettingsSubTab('financieras')} 
-                                className={`flex-1 md:flex-none flex items-center gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'financieras' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-[1.02]' : 'text-slate-500 hover:bg-slate-100 hover:text-indigo-600'}`}
+                                className={`flex-1 lg:flex-none flex items-center ${isSettingsMenuExpanded ? 'lg:justify-start' : 'lg:justify-center'} gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'financieras' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100 scale-[1.02]' : 'text-slate-500 hover:bg-white hover:shadow-sm hover:text-indigo-600'}`}
                             >
-                                <DollarSign className="w-4 h-4" /> Financieras
+                                <DollarSign className="w-4 h-4 flex-shrink-0" />
+                                <span className={`transition-all duration-200 ${isSettingsMenuExpanded ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>Financieras</span>
                             </button>
                         )}
                         {(isSuperAdmin || viewerCanManageWeeks) && (
                             <button 
                                 onClick={() => setSettingsSubTab('semanas')} 
-                                className={`flex-1 md:flex-none flex items-center gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'semanas' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-[1.02]' : 'text-slate-500 hover:bg-slate-100 hover:text-indigo-600'}`}
+                                className={`flex-1 lg:flex-none flex items-center ${isSettingsMenuExpanded ? 'lg:justify-start' : 'lg:justify-center'} gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'semanas' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100 scale-[1.02]' : 'text-slate-500 hover:bg-white hover:shadow-sm hover:text-indigo-600'}`}
                             >
-                                <Calendar className="w-4 h-4" /> Semanas
+                                <Calendar className="w-4 h-4 flex-shrink-0" />
+                                <span className={`transition-all duration-200 ${isSettingsMenuExpanded ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>Semanas</span>
                             </button>
                         )}
                         {isSuperAdmin && (
                             <button 
                                 onClick={() => setSettingsSubTab('usuarios')} 
-                                className={`flex-1 md:flex-none flex items-center gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'usuarios' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-[1.02]' : 'text-slate-500 hover:bg-slate-100 hover:text-indigo-600'}`}
+                                className={`flex-1 lg:flex-none flex items-center ${isSettingsMenuExpanded ? 'lg:justify-start' : 'lg:justify-center'} gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'usuarios' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100 scale-[1.02]' : 'text-slate-500 hover:bg-white hover:shadow-sm hover:text-indigo-600'}`}
                             >
-                                <UserCog className="w-4 h-4" /> Visores
+                                <UserCog className="w-4 h-4 flex-shrink-0" />
+                                <span className={`transition-all duration-200 ${isSettingsMenuExpanded ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>Visores</span>
                             </button>
                         )}
                         {isSuperAdmin && (
                             <button 
                                 onClick={() => setSettingsSubTab('administradores')} 
-                                className={`flex-1 md:flex-none flex items-center gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'administradores' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-[1.02]' : 'text-slate-500 hover:bg-slate-100 hover:text-indigo-600'}`}
+                                className={`flex-1 lg:flex-none flex items-center ${isSettingsMenuExpanded ? 'lg:justify-start' : 'lg:justify-center'} gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'administradores' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100 scale-[1.02]' : 'text-slate-500 hover:bg-white hover:shadow-sm hover:text-indigo-600'}`}
                             >
-                                <ShieldCheck className="w-4 h-4" /> Administradores
+                                <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+                                <span className={`transition-all duration-200 ${isSettingsMenuExpanded ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>Administradores</span>
                             </button>
                         )}
                         {isSuperAdmin && (
                             <button 
                                 onClick={() => setSettingsSubTab('api')} 
-                                className={`flex-1 md:flex-none flex items-center gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'api' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-[1.02]' : 'text-slate-500 hover:bg-slate-100 hover:text-indigo-600'}`}
+                                className={`flex-1 lg:flex-none flex items-center ${isSettingsMenuExpanded ? 'lg:justify-start' : 'lg:justify-center'} gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'api' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100 scale-[1.02]' : 'text-slate-500 hover:bg-white hover:shadow-sm hover:text-indigo-600'}`}
                             >
-                                <Zap className="w-4 h-4" /> API Externa
+                                <Zap className="w-4 h-4 flex-shrink-0" />
+                                <span className={`transition-all duration-200 ${isSettingsMenuExpanded ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>API Externa</span>
                             </button>
                         )}
                         {isSuperAdmin && (
                             <button 
                                 onClick={() => setSettingsSubTab('mantenimiento')} 
-                                className={`flex-1 md:flex-none flex items-center gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'mantenimiento' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-200 scale-[1.02]' : 'text-slate-500 hover:bg-slate-100 hover:text-indigo-600'}`}
+                                className={`flex-1 lg:flex-none flex items-center ${isSettingsMenuExpanded ? 'lg:justify-start' : 'lg:justify-center'} gap-3 px-5 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all ${settingsSubTab === 'mantenimiento' ? 'bg-indigo-600 text-white shadow-xl shadow-indigo-100 scale-[1.02]' : 'text-slate-500 hover:bg-white hover:shadow-sm hover:text-indigo-600'}`}
                             >
-                                <FileJson className="w-4 h-4" /> Sistema
+                                <FileJson className="w-4 h-4 flex-shrink-0" />
+                                <span className={`transition-all duration-200 ${isSettingsMenuExpanded ? 'opacity-100' : 'opacity-0 lg:hidden'}`}>Sistema</span>
                             </button>
                         )}
                     </aside>
 
                     {/* Área de Contenido de Ajustes */}
-                    <main className="flex-1 bg-white rounded-[2.5rem] border border-slate-100 p-6 md:p-10 shadow-xl shadow-slate-100/50 min-h-[600px] animate-in fade-in slide-in-from-right-4 duration-300">
+                    <main className="flex-1 bg-white rounded-[2.5rem] border border-slate-100 p-6 md:p-10 shadow-xl shadow-slate-100/30 min-h-[750px] animate-in fade-in slide-in-from-right-4 duration-300">
                         
                         {/* SUBTAB: GENERAL */}
                         {settingsSubTab === 'general' && (
@@ -2722,6 +2754,53 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                         />
                                                     </label>
 
+                                                    <label className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100 cursor-pointer">
+                                                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">¿Pedir Fachada del Aval?</span>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={finRequireGuarantorFacade} 
+                                                            onChange={e => setFinRequireGuarantorFacade(e.target.checked)} 
+                                                            className="w-5 h-5 text-indigo-600 rounded-lg focus:ring-indigo-500 border-slate-300" 
+                                                        />
+                                                    </label>
+
+                                                    <div className="space-y-3 pt-2 border-t border-slate-100">
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Límites de Operación</p>
+                                                        
+                                                        <div className="space-y-1.5">
+                                                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Préstamos Activos por Persona</label>
+                                                            <input 
+                                                                type="number" 
+                                                                min="1"
+                                                                value={finMaxClientActiveLoans} 
+                                                                onChange={e => setFinMaxClientActiveLoans(parseInt(e.target.value) || 1)} 
+                                                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 outline-none text-xs" 
+                                                            />
+                                                        </div>
+
+                                                        <div className="space-y-1.5">
+                                                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Límite de Avales (No-Clientes)</label>
+                                                            <input 
+                                                                type="number" 
+                                                                min="0"
+                                                                value={finMaxAvalRegistrations} 
+                                                                onChange={e => setFinMaxAvalRegistrations(parseInt(e.target.value) || 0)} 
+                                                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 outline-none text-xs" 
+                                                            />
+                                                        </div>
+
+                                                        <div className="space-y-1.5">
+                                                            <label className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Límite de Avales (Clientes Activos)</label>
+                                                            <input 
+                                                                type="number" 
+                                                                min="0"
+                                                                value={finMaxClientAsAval} 
+                                                                onChange={e => setFinMaxClientAsAval(parseInt(e.target.value) || 0)} 
+                                                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 outline-none text-xs" 
+                                                            />
+                                                        </div>
+                                                    </div>
+
                                                     {finRequireGuaranteesForAval && (
                                                         <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 space-y-3 animate-in fade-in slide-in-from-top-2">
                                                             <div className="flex items-center justify-between">
@@ -2785,7 +2864,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                 {editingFin && (
                                                     <button 
                                                         type="button" 
-                                                        onClick={() => { setEditingFin(null); setFinName(''); setFinMinGuarantees(0); setFinRequireClientPhoto(false); setFinRequireFacade(false); setFinRequireGuaranteesForAval(false); setFinMinGuaranteesForAval(0); setFinRequireGuarantorPhoto(false); setFinLogoUrl(''); setFinLogoGifUrl(''); }} 
+                                                        onClick={() => { setEditingFin(null); setFinName(''); setFinMinGuarantees(0); setFinRequireClientPhoto(false); setFinRequireFacade(false); setFinRequireGuaranteesForAval(false); setFinMinGuaranteesForAval(0); setFinRequireGuarantorPhoto(false); setFinRequireGuarantorFacade(true); setFinMaxClientActiveLoans(1); setFinMaxAvalRegistrations(2); setFinMaxClientAsAval(2); setFinLogoUrl(''); setFinLogoGifUrl(''); }} 
                                                         className="flex-1 bg-white text-slate-400 py-4 rounded-2xl font-black text-[10px] uppercase border border-slate-200 hover:bg-slate-50 transition-all"
                                                     >
                                                         Cancelar
@@ -2803,49 +2882,84 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                     </div>
 
                                     <div className="lg:col-span-2">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto no-scrollbar pr-2">
+                                        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 max-h-[700px] overflow-y-auto no-scrollbar pr-2 pb-6">
                                             {data.financieras.map(f => (
-                                                <div key={f.id} className="group bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col gap-5 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all">
-                                                    <div className="flex justify-between items-start">
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="w-12 h-12 bg-white border border-slate-100 rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-300 shadow-sm group-hover:border-indigo-200">
-                                                                {f.logoUrl ? (
-                                                                    <CachedImage src={f.logoUrl} className="w-full h-full object-cover" />
-                                                                ) : (
-                                                                    <div className="w-full h-full bg-indigo-50 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all">
-                                                                        <DollarSign className="w-6 h-6" />
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                            <div>
-                                                                <p className="uppercase text-slate-800 font-black text-sm tracking-tight">{f.name}</p>
-                                                                <div className="flex flex-wrap items-center gap-2 mt-1">
-                                                                    <span className="px-2 py-0.5 bg-slate-100 text-slate-500 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
-                                                                        <ShieldCheck className="w-2 h-2" />
-                                                                        Mín: {f.minGuarantees ?? 'Global'}
-                                                                    </span>
-                                                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${f.requireClientPhoto ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                                                                        <Camera className="w-2 h-2" />
-                                                                        Foto: {f.requireClientPhoto ? 'SÍ' : 'NO'}
-                                                                    </span>
-                                                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${f.requireFacade ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                                                                        <Home className="w-2 h-2" />
-                                                                        Fachada: {f.requireFacade ? 'SÍ' : 'NO'}
-                                                                    </span>
-                                                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${f.requireGuaranteesForAval ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                                                                        <ShieldCheck className="w-2 h-2" />
-                                                                        Garantías Aval: {f.requireGuaranteesForAval ? `SÍ (${f.minGuaranteesForAval || 0})` : 'NO'}
-                                                                    </span>
-                                                                    <span className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${f.requireGuarantorPhoto ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'}`}>
-                                                                        <User className="w-2 h-2" />
-                                                                        Foto Aval: {f.requireGuarantorPhoto ? 'SÍ' : 'NO'}
-                                                                    </span>
+                                                <div key={f.id} className="group bg-white p-6 rounded-[2.5rem] border border-slate-100 flex flex-col justify-between shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all duration-300">
+                                                    <div className="space-y-4">
+                                                        <div className="flex justify-between items-start">
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="w-12 h-12 bg-white border border-slate-100 rounded-2xl flex items-center justify-center overflow-hidden transition-all duration-300 shadow-sm group-hover:border-indigo-200">
+                                                                    {f.logoUrl ? (
+                                                                        <CachedImage src={f.logoUrl} className="w-full h-full object-cover" />
+                                                                    ) : (
+                                                                        <div className="w-full h-full bg-indigo-50 flex items-center justify-center text-indigo-400 group-hover:bg-indigo-600 group-hover:text-white transition-all">
+                                                                            <DollarSign className="w-6 h-6" />
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div>
+                                                                    <p className="uppercase text-slate-800 font-black text-sm tracking-tight">{f.name}</p>
+                                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-0.5">ID: {f.id}</p>
                                                                 </div>
                                                             </div>
+                                                            <div className="flex gap-1">
+                                                                <button onClick={() => { 
+                                                                    setEditingFin(f); 
+                                                                    setFinName(f.name); 
+                                                                    setFinMinGuarantees(f.minGuarantees || 0); 
+                                                                    setFinRequireClientPhoto(f.requireClientPhoto || false); 
+                                                                    setFinRequireFacade(f.requireFacade || false); 
+                                                                    setFinRequireGuaranteesForAval(f.requireGuaranteesForAval || false); 
+                                                                    setFinMinGuaranteesForAval(f.minGuaranteesForAval || 0); 
+                                                                    setFinRequireGuarantorPhoto(f.requireGuarantorPhoto || false); 
+                                                                    setFinRequireGuarantorFacade(f.requireGuarantorFacade !== false); 
+                                                                    setFinMaxClientActiveLoans(f.maxClientActiveLoans ?? 1); 
+                                                                    setFinMaxAvalRegistrations(f.maxAvalRegistrations ?? 2); 
+                                                                    setFinMaxClientAsAval(f.maxClientAsAval ?? 2); 
+                                                                    setFinLogoUrl(f.logoUrl || ''); 
+                                                                    setFinLogoGifUrl(f.logoGifUrl || ''); 
+                                                                    setFinGuarantorRules(f.guarantorRules || []); 
+                                                                }} className="p-2.5 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"><Pencil className="w-4 h-4"/></button>
+                                                                <button onClick={() => { if(confirm("¿Eliminar financiera?")) onDeleteFinanciera(f.id); }} className="p-2.5 text-red-400 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="w-4 h-4"/></button>
+                                                            </div>
                                                         </div>
-                                                        <div className="flex gap-1">
-                                                            <button onClick={() => { setEditingFin(f); setFinName(f.name); setFinMinGuarantees(f.minGuarantees || 0); setFinRequireClientPhoto(f.requireClientPhoto || false); setFinRequireFacade(f.requireFacade || false); setFinRequireGuaranteesForAval(f.requireGuaranteesForAval || false); setFinMinGuaranteesForAval(f.minGuaranteesForAval || 0); setFinRequireGuarantorPhoto(f.requireGuarantorPhoto || false); setFinLogoUrl(f.logoUrl || ''); setFinLogoGifUrl(f.logoGifUrl || ''); setFinGuarantorRules(f.guarantorRules || []); }} className="p-2.5 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"><Pencil className="w-4 h-4"/></button>
-                                                            <button onClick={() => { if(confirm("¿Eliminar financiera?")) onDeleteFinanciera(f.id); }} className="p-2.5 text-red-400 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="w-4 h-4"/></button>
+
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <span className="px-2.5 py-1 bg-slate-50 border border-slate-100 text-slate-500 rounded-xl text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
+                                                                <ShieldCheck className="w-2.5 h-2.5" />
+                                                                Mín G: {f.minGuarantees ?? 'Global'}
+                                                            </span>
+                                                            <span className={`px-2.5 py-1 border rounded-xl text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${f.requireClientPhoto ? 'bg-indigo-50/50 border-indigo-100 text-indigo-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                                                                <Camera className="w-2.5 h-2.5" />
+                                                                Foto: {f.requireClientPhoto ? 'SÍ' : 'NO'}
+                                                            </span>
+                                                            <span className={`px-2.5 py-1 border rounded-xl text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${f.requireFacade ? 'bg-indigo-50/50 border-indigo-100 text-indigo-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                                                                <Home className="w-2.5 h-2.5" />
+                                                                Fachada: {f.requireFacade ? 'SÍ' : 'NO'}
+                                                            </span>
+                                                            <span className={`px-2.5 py-1 border rounded-xl text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${f.requireGuarantorPhoto ? 'bg-indigo-50/50 border-indigo-100 text-indigo-600' : 'bg-slate-50 border-slate-100 text-slate-400'}`}>
+                                                                <User className="w-2.5 h-2.5" />
+                                                                Foto Aval: {f.requireGuarantorPhoto ? 'SÍ' : 'NO'}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-3">
+                                                            <div className="space-y-0.5">
+                                                                <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Límite Préstamos</span>
+                                                                <span className="block text-xs font-black text-slate-700">{f.maxClientActiveLoans ?? 1} activo(s)</span>
+                                                            </div>
+                                                            <div className="space-y-0.5">
+                                                                <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Fachada Aval</span>
+                                                                <span className={`block text-xs font-black ${f.requireGuarantorFacade !== false ? 'text-indigo-600' : 'text-slate-400'}`}>{f.requireGuarantorFacade !== false ? 'Requerida' : 'Opcional'}</span>
+                                                            </div>
+                                                            <div className="space-y-0.5">
+                                                                <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Límite Avales (No-Cli)</span>
+                                                                <span className="block text-xs font-black text-slate-700">{f.maxAvalRegistrations ?? 2} v.</span>
+                                                            </div>
+                                                            <div className="space-y-0.5">
+                                                                <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Límite Avales (Cliente)</span>
+                                                                <span className="block text-xs font-black text-slate-700">{f.maxClientAsAval ?? 2} v.</span>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -2939,7 +3053,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                         </div>
 
                                         <div className="lg:col-span-2">
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto no-scrollbar pr-2">
+                                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 max-h-[700px] overflow-y-auto no-scrollbar pr-2 pb-6">
                                                 {data.weeks.filter(w => w.financieraId === selectedFinancieraForWeeks).map(w => (
                                                     <div key={w.id} className={`group p-5 rounded-2xl border flex justify-between items-center shadow-sm transition-all ${w.isActive ? 'bg-indigo-50 border-indigo-200' : 'bg-white border-slate-100'}`}>
                                                         <div className="flex items-center gap-4">
@@ -3026,7 +3140,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
                                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
                                     <div className="xl:col-span-12">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-h-[600px] overflow-y-auto no-scrollbar pr-2">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-h-[750px] overflow-y-auto no-scrollbar pr-2 pb-6">
                                             {data.systemUsers.filter(u => u.role === UserRole.VIEWER || !u.role).map(user => (
                                                 <div key={user.id} className="group bg-white p-6 rounded-[2rem] border border-slate-100 flex flex-col gap-4 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all">
                                                     <div className="flex justify-between items-start">
@@ -3103,7 +3217,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
                                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-10">
                                     <div className="xl:col-span-12">
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 max-h-[600px] overflow-y-auto no-scrollbar pr-2">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 max-h-[750px] overflow-y-auto no-scrollbar pr-2 pb-6">
                                             {data.systemUsers.filter(u => u.role === UserRole.ADMIN).map(user => (
                                                 <div key={user.id} className="group bg-white p-6 rounded-[2rem] border border-slate-100 flex flex-col gap-4 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all">
                                                     <div className="flex justify-between items-start">
@@ -3990,7 +4104,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                           <>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                   <div className="space-y-2">
-                                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Asignar Financieras:</p>
+                                      <div className="flex justify-between items-center px-2">
+                                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Asignar Financieras:</p>
+                                          <div className="flex gap-2">
+                                              <button type="button" onClick={() => setSysUserSelectedFins(data.financieras.map(f => f.id))} className="text-[8px] font-black uppercase text-indigo-600 hover:underline">Todos</button>
+                                              <span className="text-[8px] text-slate-300">|</span>
+                                              <button type="button" onClick={() => { setSysUserSelectedFins([]); setSysUserSelectedSups([]); }} className="text-[8px] font-black uppercase text-slate-400 hover:underline">Ninguno</button>
+                                          </div>
+                                      </div>
                                       <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto no-scrollbar border-2 border-slate-100 rounded-2xl p-3 bg-slate-50">
                                           {data.financieras.map(fin => (
                                               <label key={fin.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${sysUserSelectedFins.includes(fin.id) ? 'bg-white border-indigo-200 shadow-sm' : 'bg-transparent border-transparent hover:border-slate-200'}`}>
@@ -4003,15 +4124,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                   </div>
 
                                   <div className="space-y-2">
-                                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-2">Supervisores a Monitorear:</p>
+                                      <div className="flex justify-between items-center px-2">
+                                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Supervisores a Monitorear:</p>
+                                          {sysUserSelectedFins.length > 0 && (
+                                              <div className="flex gap-2">
+                                                  <button type="button" onClick={() => setSysUserSelectedSups(fullSupervisorsList.filter(s => sysUserSelectedFins.includes(s.financieraId)).map(s => s.id))} className="text-[8px] font-black uppercase text-indigo-600 hover:underline">Todos</button>
+                                                  <span className="text-[8px] text-slate-300">|</span>
+                                                  <button type="button" onClick={() => setSysUserSelectedSups([])} className="text-[8px] font-black uppercase text-slate-400 hover:underline">Ninguno</button>
+                                              </div>
+                                          )}
+                                      </div>
                                       <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto no-scrollbar border-2 border-slate-100 rounded-2xl p-3 bg-slate-50">
-                                          {fullSupervisorsList.map(sup => (
-                                              <label key={sup.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${sysUserSelectedSups.includes(sup.id) ? 'bg-white border-indigo-200 shadow-sm' : 'bg-transparent border-transparent hover:border-slate-200'}`}>
-                                                  <input type="checkbox" checked={sysUserSelectedSups.includes(sup.id)} onChange={() => toggleSysUserSupervisor(sup.id)} className="hidden" />
-                                                  {sysUserSelectedSups.includes(sup.id) ? <CheckSquare className="w-4 h-4 text-indigo-600" /> : <Square className="w-4 h-4 text-slate-300" />}
-                                                  <span className="text-[10px] font-bold uppercase text-slate-700 truncate">{sup.name}</span>
-                                              </label>
-                                          ))}
+                                          {sysUserSelectedFins.length === 0 ? (
+                                              <p className="text-[10px] text-slate-400 font-bold italic p-3 text-center">Selecciona al menos una financiera primero</p>
+                                          ) : (
+                                              fullSupervisorsList
+                                                .filter(sup => sysUserSelectedFins.includes(sup.financieraId))
+                                                .map(sup => (
+                                                  <label key={sup.id} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${sysUserSelectedSups.includes(sup.id) ? 'bg-white border-indigo-200 shadow-sm' : 'bg-transparent border-transparent hover:border-slate-200'}`}>
+                                                      <input type="checkbox" checked={sysUserSelectedSups.includes(sup.id)} onChange={() => toggleSysUserSupervisor(sup.id)} className="hidden" />
+                                                      {sysUserSelectedSups.includes(sup.id) ? <CheckSquare className="w-4 h-4 text-indigo-600" /> : <Square className="w-4 h-4 text-slate-300" />}
+                                                      <span className="text-[10px] font-bold uppercase text-slate-700 truncate">{sup.name}</span>
+                                                  </label>
+                                              ))
+                                          )}
                                       </div>
                                   </div>
                               </div>

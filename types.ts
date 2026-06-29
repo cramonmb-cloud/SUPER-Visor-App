@@ -66,6 +66,10 @@ export interface Financiera {
   requireGuaranteesForAval?: boolean; // NEW: Whether to require guarantees for the guarantor
   minGuaranteesForAval?: number; // NEW: Minimum number of guarantees required for the guarantor
   requireGuarantorPhoto?: boolean; // NEW: Whether to require a photo of the guarantor (person)
+  requireGuarantorFacade?: boolean; // NEW: Whether to require a photo of the guarantor's facade
+  maxClientActiveLoans?: number; // NEW: Maximum active loans/registrations a client can have
+  maxAvalRegistrations?: number; // NEW: Maximum registrations an aval can have
+  maxClientAsAval?: number; // NEW: Maximum registrations a client can have as an aval
 }
 
 export interface Guarantee {

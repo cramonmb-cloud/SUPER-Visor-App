@@ -2,6 +2,7 @@ import express from "express";
 import compression from "compression";
 import path from "path";
 import { fileURLToPath } from "url";
+import http from "http";
 import { initializeApp as initializeFirebaseApp } from "firebase/app";
 import { 
     getFirestore, 
@@ -42,6 +43,7 @@ const db = getFirestore(fbApp);
 async function startServer() {
   const app = express();
   const PORT = 3000;
+  const server = http.createServer(app);
 
   app.use(compression());
   app.use(express.json());
@@ -249,7 +251,12 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { 
+        middlewareMode: true,
+        hmr: {
+          server: server
+        }
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
@@ -273,7 +280,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
     console.log("Optimizations enabled: Gzip compression, Static asset caching.");
   });

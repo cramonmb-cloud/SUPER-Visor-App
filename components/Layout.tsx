@@ -1,6 +1,7 @@
 import React from 'react';
 import { LogOut, LayoutDashboard, RefreshCw } from 'lucide-react';
 import { CachedImage } from './CachedImage';
+import { VERSION } from '../version';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -29,13 +30,18 @@ export const Layout: React.FC<LayoutProps> = ({ children, userRole, userName, ap
                 )}
               </div>
               {onRefresh && (
-                <button
-                  onClick={onRefresh}
-                  className="p-2 bg-blue-50 text-blue-900 hover:bg-blue-900 hover:text-white rounded-xl transition-all active:scale-95 shadow-lg shadow-blue-100"
-                  title="Refrescar Datos"
-                >
-                  <RefreshCw className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={onRefresh}
+                    className="p-2 bg-blue-50 text-blue-900 hover:bg-blue-900 hover:text-white rounded-xl transition-all active:scale-95 shadow-lg shadow-blue-100 flex items-center justify-center"
+                    title="Refrescar Datos"
+                  >
+                    <RefreshCw className="w-5 h-5" />
+                  </button>
+                  <span className="text-[10px] font-black text-slate-400 bg-slate-100 border border-slate-200/50 px-2.5 py-1.5 rounded-xl uppercase tracking-wider">
+                    v{VERSION}
+                  </span>
+                </div>
               )}
               <div className="hidden xs:block">
                 <h1 className="text-sm font-black text-slate-900 leading-none tracking-tight uppercase">{appName}</h1>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Loader2, RefreshCw, Trash2, RotateCcw, X } from 'lucide-react';
+import { VERSION } from './version';
 import { Layout } from './components/Layout';
 import { PinPad } from './components/PinPad';
 import { AdminPanel } from './components/AdminPanel';
@@ -653,8 +654,44 @@ const App: React.FC = () => {
     }
   };
 
-  const addFinanciera = async (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean) => { await addDoc(collection(db, 'financieras'), { name: name.toUpperCase(), createdAt: Date.now(), minGuarantees, requireClientPhoto, requireFacade, logoUrl, guarantorRules, logoGifUrl: logoGifUrl || '', requireGuaranteesForAval: !!requireGuaranteesForAval, minGuaranteesForAval: minGuaranteesForAval || 0, requireGuarantorPhoto: !!requireGuarantorPhoto }); };
-  const updateFinanciera = async (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean) => { await updateDoc(doc(db, 'financieras', id), { name: name.toUpperCase(), minGuarantees, requireClientPhoto, requireFacade, logoUrl, guarantorRules, logoGifUrl: logoGifUrl || '', requireGuaranteesForAval: !!requireGuaranteesForAval, minGuaranteesForAval: minGuaranteesForAval || 0, requireGuarantorPhoto: !!requireGuarantorPhoto }); };
+  const addFinanciera = async (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number) => { 
+    await addDoc(collection(db, 'financieras'), { 
+      name: name.toUpperCase(), 
+      createdAt: Date.now(), 
+      minGuarantees, 
+      requireClientPhoto, 
+      requireFacade, 
+      logoUrl, 
+      guarantorRules, 
+      logoGifUrl: logoGifUrl || '', 
+      requireGuaranteesForAval: !!requireGuaranteesForAval, 
+      minGuaranteesForAval: minGuaranteesForAval || 0, 
+      requireGuarantorPhoto: !!requireGuarantorPhoto,
+      requireGuarantorFacade: requireGuarantorFacade !== false, // Defaults to true
+      maxClientActiveLoans: maxClientActiveLoans ?? 1, // Defaults to 1
+      maxAvalRegistrations: maxAvalRegistrations ?? 2, // Defaults to 2
+      maxClientAsAval: maxClientAsAval ?? 2 // Defaults to 2
+    }); 
+  };
+  
+  const updateFinanciera = async (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number) => { 
+    await updateDoc(doc(db, 'financieras', id), { 
+      name: name.toUpperCase(), 
+      minGuarantees, 
+      requireClientPhoto, 
+      requireFacade, 
+      logoUrl, 
+      guarantorRules, 
+      logoGifUrl: logoGifUrl || '', 
+      requireGuaranteesForAval: !!requireGuaranteesForAval, 
+      minGuaranteesForAval: minGuaranteesForAval || 0, 
+      requireGuarantorPhoto: !!requireGuarantorPhoto,
+      requireGuarantorFacade: requireGuarantorFacade !== false,
+      maxClientActiveLoans: maxClientActiveLoans ?? 1,
+      maxAvalRegistrations: maxAvalRegistrations ?? 2,
+      maxClientAsAval: maxClientAsAval ?? 2
+    }); 
+  };
   const deleteFinanciera = async (id: string) => { await deleteDoc(doc(db, 'financieras', id)); };
   
   const addApiKey = async (name: string, permissions: ApiPermission[], assignedFinancieraIds: string[]) => {
@@ -863,6 +900,9 @@ const App: React.FC = () => {
       <div className="pt-6 h-full">
         {!currentUser ? (
           <div className="h-full bg-slate-100 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+            <div className="absolute top-8 flex items-center justify-center text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-200/50 px-3 py-1 rounded-full border border-slate-200/20 backdrop-blur-sm">
+              Compilación: v{VERSION}
+            </div>
             <PinPad 
               onSuccess={handleLogin} 
               title={appState.settings.appName} 

@@ -77,7 +77,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
   const [renewalSourceClientId, setRenewalSourceClientId] = useState<string | null>(null); // NEW: Original Client ID for renewal
   const [clientSearchQuery, setClientSearchQuery] = useState(''); // NEW: Search query for renewal
   const [coincidenceClient, setCoincidenceClient] = useState<Client | null>(null); // NEW: Coincidence check state
-  const [coincidenceAval, setCoincidenceAval] = useState<{ client: Client, count: number, isAlreadyClient: boolean } | null>(null); // NEW: Coincidence check for aval
+  const [coincidenceAval, setCoincidenceAval] = useState<{ client: Client, count: number, isAlreadyClient: boolean, limit: number } | null>(null); // NEW: Coincidence check for aval
   const [ignoredNames, setIgnoredNames] = useState<string[]>([]); // NEW: Track ignored names to avoid re-triggering modal
   const [ignoredAvalNames, setIgnoredAvalNames] = useState<string[]>([]); // NEW: Track ignored aval names
   const [fullPhotoUrl, setFullPhotoUrl] = useState<string | null>(null); // NEW: Full screen photo view
@@ -86,6 +86,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
   const [manualCodeInput, setManualCodeInput] = useState(''); // NEW: Manual QR entry value
   const [showCycleModal, setShowCycleModal] = useState(false); // NEW: Welcome modal for new cycle
   const [hasCheckedCycle, setHasCheckedCycle] = useState(false); // NEW: Avoid showing welcome modal multiple times
+  const [dataLoaded, setDataLoaded] = useState(false); // NEW: Delay welcome modal check until data is synced
   
   // NEW: State for existing client as guarantor
   const [aval1IsClient, setAval1IsClient] = useState(false);
@@ -140,6 +141,10 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
   const requireClientPhoto = supervisorFinanciera?.requireClientPhoto ?? false;
   const requireFacade = supervisorFinanciera?.requireFacade ?? settings.registrationRules?.requireFacade ?? true;
   const requireGuarantorPhoto = supervisorFinanciera?.requireGuarantorPhoto ?? false;
+  const requireGuarantorFacade = supervisorFinanciera?.requireGuarantorFacade ?? true;
+  const maxClientActiveLoans = supervisorFinanciera?.maxClientActiveLoans ?? 1;
+  const maxAvalRegistrations = supervisorFinanciera?.maxAvalRegistrations ?? 2;
+  const maxClientAsAval = supervisorFinanciera?.maxClientAsAval ?? 2;
 
   // NEW: Calculate required avales based on credit amount
   const amountNum = Number(creditAmount);
@@ -403,24 +408,25 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     // if (requireClientPhoto && !clientPhotoFile) { alert("Foto del cliente obligatoria"); return; }
 
     // Final check for aval limits
-    const checkAvalLimit = (name: string) => {
-        if (!name) return true;
+    const getAvalLimitInfo = (name: string) => {
+        if (!name) return { ok: true, limit: 2, count: 0 };
         const norm = name.trim().toUpperCase();
-        let avalOccurrenceCount = 0;
+        const isAlreadyClient = clients.some(cl => !cl.isArchived && cl.name?.trim().toUpperCase() === norm);
+        const limit = isAlreadyClient ? maxClientAsAval : maxAvalRegistrations;
+        
+        let count = 0;
         clients.forEach(cl => {
             if (cl.isArchived) return;
-            // Count if this person is assigned as an aval in this record
             const isAval = cl.avalName?.trim().toUpperCase() === norm || 
                           cl.avales?.some(a => a.name?.trim().toUpperCase() === norm);
-            if (isAval) avalOccurrenceCount++;
+            if (isAval) count++;
         });
-        return avalOccurrenceCount < 2; // Allow up to 2 aval roles
+        return { ok: count < limit, limit, count };
     };
 
     const checkClientLimit = (name: string) => {
         if (!name) return true;
         const norm = name.trim().toUpperCase();
-        // Skip check if it's a renewal (we are essentially the same client record or updating it)
         if (isRenewalMode) return true;
         
         let clientOccurrenceCount = 0;
@@ -430,37 +436,44 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 clientOccurrenceCount++;
             }
         });
-        return clientOccurrenceCount < 1; // Allow only 1 client role
+        return clientOccurrenceCount < maxClientActiveLoans;
     };
 
     if (!checkClientLimit(clientName)) {
         setRegistrationError({
             title: "Límite de Clientes",
-            message: `El cliente ${clientName} ya cuenta con un registro activo. Por reglamento, una persona solo puede estar como CLIENTE 1 vez.`
+            message: `El cliente ${clientName} ya cuenta con un registro activo. Por reglamento, una persona solo puede estar como CLIENTE ${maxClientActiveLoans} vez/veces.`
         });
         return;
     }
 
-    if (!checkAvalLimit(avalName)) {
+    const aval1Limit = getAvalLimitInfo(avalName);
+    if (!aval1Limit.ok) {
         setRegistrationError({
             title: "Límite Excedido",
-            message: `El aval ${avalName} ya cuenta con 2 registros previos. Por reglamento, no se permite una tercera vinculación.`
+            message: `El aval ${avalName} ya cuenta con ${aval1Limit.count} registros previos. Por reglamento de esta financiera, no se permiten más de ${aval1Limit.limit} vinculaciones.`
         });
         return;
     }
-    if (requiredAvales >= 2 && !checkAvalLimit(aval2Name)) {
-        setRegistrationError({
-            title: "Límite Excedido",
-            message: `El aval 2 (${aval2Name}) ya cuenta con 2 registros previos y no puede vincularse nuevamente.`
-        });
-        return;
+    if (requiredAvales >= 2) {
+        const aval2Limit = getAvalLimitInfo(aval2Name);
+        if (!aval2Limit.ok) {
+            setRegistrationError({
+                title: "Límite Excedido",
+                message: `El aval 2 (${aval2Name}) ya cuenta con ${aval2Limit.count} registros previos. Por reglamento de esta financiera, no se permiten más de ${aval2Limit.limit} vinculaciones.`
+            });
+            return;
+        }
     }
-    if (requiredAvales >= 3 && !checkAvalLimit(aval3Name)) {
-        setRegistrationError({
-            title: "Límite Excedido",
-            message: `El aval 3 (${aval3Name}) ya cuenta con 2 registros previos y no puede vincularse nuevamente.`
-        });
-        return;
+    if (requiredAvales >= 3) {
+        const aval3Limit = getAvalLimitInfo(aval3Name);
+        if (!aval3Limit.ok) {
+            setRegistrationError({
+                title: "Límite Excedido",
+                message: `El aval 3 (${aval3Name}) ya cuenta con ${aval3Limit.count} registros previos. Por reglamento de esta financiera, no se permiten más de ${aval3Limit.limit} vinculaciones.`
+            });
+            return;
+        }
     }
 
     setIsUploading(true);
@@ -577,7 +590,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         }
 
         const isAvalComplete = 
-            (!fin?.requireFacade || !!facadeUrl || !!targetAvalClient.avales?.[selectedAvalIndex]?.facadeUrl) &&
+            (!requireGuarantorFacade || !!facadeUrl || !!targetAvalClient.avales?.[selectedAvalIndex]?.facadeUrl) &&
             (!fin?.requireGuarantorPhoto || !!guarantorPhotoUrl || !!targetAvalClient.avales?.[selectedAvalIndex]?.photoUrl);
 
         await onUpdateAvalVisit(targetAvalClient.id, facadeUrl, loc.lat, loc.lng, selectedAvalIndex, avalGuarantees, guarantorPhotoUrl, isAvalComplete);
@@ -849,26 +862,36 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     });
 
     if ((avalCount > 0 || isAlreadyClient) && firstMatchClient) {
-        if (!coincidenceAval || coincidenceAval.client.id !== firstMatchClient.id || coincidenceAval.count !== avalCount || coincidenceAval.isAlreadyClient !== isAlreadyClient) {
-            setCoincidenceAval({ client: firstMatchClient, count: avalCount, isAlreadyClient });
+        const currentLimit = isAlreadyClient ? maxClientAsAval : maxAvalRegistrations;
+        if (!coincidenceAval || coincidenceAval.client.id !== firstMatchClient.id || coincidenceAval.count !== avalCount || coincidenceAval.isAlreadyClient !== isAlreadyClient || coincidenceAval.limit !== currentLimit) {
+            setCoincidenceAval({ client: firstMatchClient, count: avalCount, isAlreadyClient, limit: currentLimit });
         }
     } else {
         setCoincidenceAval(null);
     }
   }, [avalName, view, scanStatus, clients, isRenewalMode, ignoredAvalNames]);
 
-  // NEW: Detect if it's a new cycle with 0 visits for this supervisor and show welcome modal
+  // NEW: Delay welcome modal check to let Firestore sync initial data
   useEffect(() => {
+    const t = setTimeout(() => setDataLoaded(true), 1200);
+    return () => clearTimeout(t);
+  }, []);
+
+  // NEW: Detect if it's a new cycle with 0 registrations or visits for this supervisor and show welcome modal
+  useEffect(() => {
+    if (!dataLoaded) return;
     if (currentWeek && !hasCheckedCycle) {
-      const supervisorVisitsThisWeek = visits.filter(
+      const hasVisits = visits.some(
         v => v.supervisorId === supervisor.id && v.weekId === currentWeek.id
       );
-      if (supervisorVisitsThisWeek.length === 0) {
+      const hasRegistrations = currentWeekClients.length > 0;
+      
+      if (!hasVisits && !hasRegistrations) {
         setShowCycleModal(true);
       }
       setHasCheckedCycle(true);
     }
-  }, [currentWeek, supervisor.id, visits, hasCheckedCycle]);
+  }, [currentWeek, supervisor.id, visits, currentWeekClients, hasCheckedCycle, dataLoaded]);
 
   const getFormattedTodayDate = () => {
     const date = new Date();
@@ -1256,33 +1279,35 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                       </button>
                   </div>
 
-                  <div className={`grid gap-3 ${(requireGuarantorPhoto && (!targetAvalClient?.avales?.[selectedAvalIndex]?.photoUrl && !(selectedAvalIndex === 0 && targetAvalClient?.avalPhotoUrl))) ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                  <div className={`grid gap-3 ${(requireGuarantorPhoto && requireGuarantorFacade) ? 'grid-cols-2' : 'grid-cols-1'}`}>
                       {/* FACHADA */}
-                      {(!(targetAvalClient?.avales?.[selectedAvalIndex]?.facadeUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalFacadeUrl)) || facadeFile || showCompletedFacade || !onlyShowPending) ? (
-                        <div className={`border-2 border-dashed rounded-3xl p-3 text-center transition-all ${(!(targetAvalClient?.avales?.[selectedAvalIndex]?.facadeUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalFacadeUrl)) || facadeFile || showCompletedFacade) ? 'border-slate-100 bg-slate-50/50' : 'border-emerald-200 bg-emerald-50/30 opacity-60'}`}>
-                          {(!(targetAvalClient?.avales?.[selectedAvalIndex]?.facadeUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalFacadeUrl)) || facadeFile || showCompletedFacade) ? (
-                              <>
-                                {!facadePreview ? (
-                                    <div onClick={() => fileInputRef.current?.click()} className="cursor-pointer py-6 space-y-2">
-                                        <Camera className="w-8 h-8 text-blue-500 mx-auto opacity-80" />
-                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Foto Fachada</p>
-                                    </div>
-                                ) : (
-                                    <div className="relative">
-                                        <img src={facadePreview} className="h-32 w-full object-cover rounded-2xl shadow-md" />
-                                        <button onClick={() => { setFacadeFile(null); setFacadePreview(null); }} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white p-1 rounded-full shadow-lg"><Trash2 className="w-3.5 h-3.5"/></button>
-                                    </div>
-                                )}
-                              </>
-                          ) : (
-                              <div className="py-4 flex flex-col items-center justify-center gap-1">
-                                  <CheckCircle className="w-6 h-6 text-emerald-500" />
-                                  <p className="text-[8px] font-black text-emerald-600 uppercase">Fachada Lista</p>
-                                  <button onClick={() => setShowCompletedFacade(true)} className="text-[7px] font-bold text-slate-400 underline uppercase mt-1">Editar</button>
-                              </div>
-                          )}
-                        </div>
-                      ) : null}
+                      {requireGuarantorFacade && (
+                        (!(targetAvalClient?.avales?.[selectedAvalIndex]?.facadeUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalFacadeUrl)) || facadeFile || showCompletedFacade || !onlyShowPending) ? (
+                          <div className={`border-2 border-dashed rounded-3xl p-3 text-center transition-all ${(!(targetAvalClient?.avales?.[selectedAvalIndex]?.facadeUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalFacadeUrl)) || facadeFile || showCompletedFacade) ? 'border-slate-100 bg-slate-50/50' : 'border-emerald-200 bg-emerald-50/30 opacity-60'}`}>
+                            {(!(targetAvalClient?.avales?.[selectedAvalIndex]?.facadeUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalFacadeUrl)) || facadeFile || showCompletedFacade) ? (
+                                <>
+                                  {!facadePreview ? (
+                                      <div onClick={() => fileInputRef.current?.click()} className="cursor-pointer py-6 space-y-2">
+                                          <Camera className="w-8 h-8 text-blue-500 mx-auto opacity-80" />
+                                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Foto Fachada</p>
+                                      </div>
+                                  ) : (
+                                      <div className="relative">
+                                          <img src={facadePreview} className="h-32 w-full object-cover rounded-2xl shadow-md" />
+                                          <button onClick={() => { setFacadeFile(null); setFacadePreview(null); }} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white p-1 rounded-full shadow-lg"><Trash2 className="w-3.5 h-3.5"/></button>
+                                      </div>
+                                  )}
+                                </>
+                            ) : (
+                                <div className="py-4 flex flex-col items-center justify-center gap-1">
+                                    <CheckCircle className="w-6 h-6 text-emerald-500" />
+                                    <p className="text-[8px] font-black text-emerald-600 uppercase">Fachada Lista</p>
+                                    <button onClick={() => setShowCompletedFacade(true)} className="text-[7px] font-bold text-slate-400 underline uppercase mt-1">Editar</button>
+                                </div>
+                            )}
+                          </div>
+                        ) : null
+                      )}
 
                       {/* FOTO AVAL PERSONA */}
                       {requireGuarantorPhoto && (
@@ -1970,8 +1995,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 <div className="flex gap-3">
                   <button 
                     onClick={() => {
-                        const currentName = clientName.trim().toUpperCase();
-                        if (currentName) setIgnoredNames(prev => [...prev, currentName]);
+                        setClientName('');
                         setCoincidenceClient(null);
                     }} 
                     className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all active:scale-95"
@@ -2010,10 +2034,10 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
               exit={{ scale: 0.9, y: 20 }}
               className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden"
             >
-              <div className={`${coincidenceAval.count >= 2 ? 'bg-red-500' : 'bg-amber-500'} p-4 flex items-center gap-3 text-white`}>
+              <div className={`${coincidenceAval.count >= coincidenceAval.limit ? 'bg-red-500' : 'bg-amber-500'} p-4 flex items-center gap-3 text-white`}>
                 <AlertTriangle className="w-6 h-6 animate-pulse" />
                 <h3 className="font-black uppercase text-sm tracking-tight">
-                    {coincidenceAval.count >= 2 ? 'Límite de Avales Alcanzado' : coincidenceAval.isAlreadyClient ? 'Persona ya es Cliente' : 'Aval con Registros Previos'}
+                    {coincidenceAval.count >= coincidenceAval.limit ? 'Límite de Avales Alcanzado' : coincidenceAval.isAlreadyClient ? 'Persona ya es Cliente' : 'Aval con Registros Previos'}
                 </h3>
               </div>
               
@@ -2036,20 +2060,20 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                       </div>
                   </div>
                 </div>
-
+ 
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
                   <p className="text-[10px] font-bold text-slate-600 text-center uppercase leading-tight">
                     {coincidenceAval.isAlreadyClient && (
-                      <span className="block text-red-600 mb-2 border-b border-red-100 pb-2">¡ESTA PERSONA YA ES UN CLIENTE REGISTRADO! (LIMITE DE 1 CLIENTE AGOTADO)</span>
+                      <span className="block text-red-600 mb-2 border-b border-red-100 pb-2">¡ESTA PERSONA YA ES UN CLIENTE REGISTRADO! (LÍMITE DE PRÉSTAMOS ACTIVOS: {maxClientActiveLoans})</span>
                     )}
-                    <span className="block text-indigo-600 font-black mb-1">REGLAMENTO: 1 CLIENTE + 2 AVALES</span>
-                    {coincidenceAval.count >= 2 
+                    <span className="block text-indigo-600 font-black mb-1">REGLAMENTO MÁX: CLIENTE {maxClientActiveLoans} V. + AVAL (NO-CLIENTE) {maxAvalRegistrations} V. / (CLIENTE) {maxClientAsAval} V.</span>
+                    {coincidenceAval.count >= coincidenceAval.limit 
                         ? `ESTA PERSONA YA TIENE ${coincidenceAval.count} REGISTROS COMO AVAL. NO PUEDE SER VINCULADO MÁS VECES.`
-                        : `ESTA PERSONA TIENE ${coincidenceAval.count} REGISTRO(S) COMO AVAL. ${coincidenceAval.count === 1 ? 'ESTE SERÍA SU ÚLTIMO REGISTRO PERMITIDO COMO AVAL.' : ''}`
+                        : `ESTA PERSONA TIENE ${coincidenceAval.count} REGISTRO(S) COMO AVAL (LÍMITE MÁX: ${coincidenceAval.limit}).`
                     }
                   </p>
                   
-                  {coincidenceAval.count < 2 && (
+                  {coincidenceAval.count < coincidenceAval.limit && (
                     <div className="pt-2 border-t border-slate-200">
                         <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Datos existentes:</p>
                         <div className="flex flex-col gap-1">
@@ -2063,9 +2087,9 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     </div>
                   )}
                 </div>
-
+ 
                 <div className="flex gap-3">
-                  {coincidenceAval.count >= 2 ? (
+                  {coincidenceAval.count >= coincidenceAval.limit ? (
                     <button 
                       onClick={() => {
                           setAvalName('');
@@ -2079,8 +2103,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     <>
                         <button 
                             onClick={() => {
-                                const currentName = avalName.trim().toUpperCase();
-                                if (currentName) setIgnoredAvalNames(prev => [...prev, currentName]);
+                                setAvalName('');
                                 setCoincidenceAval(null);
                             }} 
                             className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all active:scale-95"
@@ -2502,31 +2525,33 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                         )}
 
                         {/* FACHADA AVAL */}
-                        <div className="space-y-2">
-                          <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Fachada del Aval</p>
-                          <div className="flex gap-3 items-center">
-                            <div className="w-24 h-24 rounded-2xl bg-white border border-slate-200 overflow-hidden flex-shrink-0 shadow-sm">
-                              {avalFacadePreview ? (
-                                <img src={avalFacadePreview} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-300"><Home className="w-8 h-8 text-blue-300" /></div>
-                              )}
-                            </div>
-                            <label className="flex-1 cursor-pointer">
-                              <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50 transition-all group">
-                                <Camera className="w-6 h-6 text-slate-400 group-hover:text-emerald-600 mb-1" />
-                                <span className="text-[10px] font-black text-slate-500 group-hover:text-emerald-700 uppercase">{avalFacadePreview ? 'Cambiar Foto' : 'Tomar Foto'}</span>
-                                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) {
-                                    setAvalFacadeFile(file);
-                                    setAvalFacadePreview(URL.createObjectURL(file));
-                                  }
-                                }} />
+                        {requireGuarantorFacade && (
+                          <div className="space-y-2">
+                            <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Fachada del Aval</p>
+                            <div className="flex gap-3 items-center">
+                              <div className="w-24 h-24 rounded-2xl bg-white border border-slate-200 overflow-hidden flex-shrink-0 shadow-sm">
+                                {avalFacadePreview ? (
+                                  <img src={avalFacadePreview} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-slate-300"><Home className="w-8 h-8 text-blue-300" /></div>
+                                )}
                               </div>
-                            </label>
+                              <label className="flex-1 cursor-pointer">
+                                <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50 transition-all group">
+                                  <Camera className="w-6 h-6 text-slate-400 group-hover:text-emerald-600 mb-1" />
+                                  <span className="text-[10px] font-black text-slate-500 group-hover:text-emerald-700 uppercase">{avalFacadePreview ? 'Cambiar Foto' : 'Tomar Foto'}</span>
+                                  <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) {
+                                      setAvalFacadeFile(file);
+                                      setAvalFacadePreview(URL.createObjectURL(file));
+                                    }
+                                  }} />
+                                </div>
+                              </label>
+                            </div>
                           </div>
-                        </div>
+                        )}
                       </div>
                     </div>
                   )}
