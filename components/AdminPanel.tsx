@@ -1657,6 +1657,60 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                     </div>
                 </div>
 
+                {/* Stats Cards */}
+                {(() => {
+                    const totalFiltered = filteredClients.length;
+                    const completeFiltered = filteredClients.filter(c => checkClientCompleteness(c, data.financieras.find(f => f.id === c.financieraId)).isComplete).length;
+                    const incompleteFiltered = totalFiltered - completeFiltered;
+
+                    return (
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 mb-8">
+                            {/* Card 1: Total */}
+                            <div className="relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 border-slate-100 shadow-sm flex items-center justify-between group hover:border-indigo-200 transition-all duration-300">
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Clientes en Filtro</span>
+                                    <span className="text-3xl font-black text-slate-800 tracking-tight block">{totalFiltered}</span>
+                                </div>
+                                <div className="p-4 bg-indigo-50 text-indigo-600 rounded-2xl group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300">
+                                    <Users className="w-6 h-6" />
+                                </div>
+                            </div>
+
+                            {/* Card 2: Completos */}
+                            <div className="relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 border-slate-100 shadow-sm flex items-center justify-between group hover:border-green-200 transition-all duration-300">
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Clientes Completos</span>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-3xl font-black text-slate-800 tracking-tight">{completeFiltered}</span>
+                                        <span className="text-xs font-black text-green-600 bg-green-50 px-2 py-0.5 rounded-lg">
+                                            {totalFiltered > 0 ? ((completeFiltered / totalFiltered) * 100).toFixed(0) : 0}%
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="p-4 bg-green-50 text-green-600 rounded-2xl group-hover:bg-green-600 group-hover:text-white transition-all duration-300">
+                                    <CheckCircle className="w-6 h-6" />
+                                </div>
+                            </div>
+
+                            {/* Card 3: Incompletos */}
+                            <div className="relative overflow-hidden bg-gradient-to-br from-slate-50 to-white p-6 rounded-3xl border-2 border-slate-100 shadow-sm flex items-center justify-between group hover:border-rose-200 transition-all duration-300">
+                                <div className="space-y-1">
+                                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Clientes Incompletos</span>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className="text-3xl font-black text-slate-800 tracking-tight">{incompleteFiltered}</span>
+                                        <span className="text-xs font-black text-rose-600 bg-rose-50 px-2 py-0.5 rounded-lg">
+                                            {totalFiltered > 0 ? ((incompleteFiltered / totalFiltered) * 100).toFixed(0) : 0}%
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="p-4 bg-rose-50 text-rose-600 rounded-2xl group-hover:bg-rose-600 group-hover:text-white transition-all duration-300">
+                                    <AlertTriangle className="w-6 h-6" />
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })()}
+
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                     <div className="relative w-full md:w-96 flex gap-2">
                         <div className="relative flex-1">
