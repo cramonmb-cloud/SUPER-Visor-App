@@ -193,8 +193,7 @@ const App: React.FC = () => {
       // This reduces visits data from tens of thousands of other supervisors down to theirs only!
       const visitsQuery = query(
         collection(db, 'visits'),
-        where('supervisorId', '==', supervisor.id),
-        where('timestamp', '>=', oneYearAgo)
+        where('supervisorId', '==', supervisor.id)
       );
 
       unsubs.push(onSnapshot(visitsQuery, (snap) => {
