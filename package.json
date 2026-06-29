@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "node bump-version.js minor && vite build",
+    "build": "vite build",
     "bump:minor": "node bump-version.js minor",
     "bump:major": "node bump-version.js major",
     "start": "node server.ts",
