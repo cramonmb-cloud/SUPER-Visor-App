@@ -1230,7 +1230,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         ].map((tab) => {
            const canSee = (!tab.adminOnly) || isSuperAdmin || (tab.id === 'settings' && viewerCanManageWeeks);
            return canSee && (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id as any)} className={`px-6 py-4 text-xs font-black uppercase transition-all whitespace-nowrap ${activeTab === tab.id ? 'border-b-4 border-indigo-600 text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>
+            <button key={tab.id} onClick={() => {
+              setActiveTab(tab.id as any);
+              if (tab.id === 'avales') {
+                setFilterWeekId('ALL');
+              } else if (tab.id === 'clients') {
+                setFilterWeekId('CURRENT');
+              }
+            }} className={`px-6 py-4 text-xs font-black uppercase transition-all whitespace-nowrap ${activeTab === tab.id ? 'border-b-4 border-indigo-600 text-indigo-600' : 'text-slate-400 hover:text-slate-600'}`}>
               {tab.label}
             </button>
            );
