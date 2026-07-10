@@ -119,6 +119,31 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const [facadePreview, setFacadePreview] = useState<string | null>(null);
     const [avalGuarantees, setAvalGuarantees] = useState<Guarantee[]>([]);
     const [newAvalGuarantee, setNewAvalGuarantee] = useState('');
+    const [aval1Guarantees, setAval1Guarantees] = useState<string[]>([]);
+    const [newAval1Guarantee, setNewAval1Guarantee] = useState('');
+    const [aval2Guarantees, setAval2Guarantees] = useState<string[]>([]);
+    const [newAval2Guarantee, setNewAval2Guarantee] = useState('');
+    const [aval3Guarantees, setAval3Guarantees] = useState<string[]>([]);
+    const [newAval3Guarantee, setNewAval3Guarantee] = useState('');
+
+    const handleAddAval1Guarantee = () => {
+        if (newAval1Guarantee.trim()) {
+            setAval1Guarantees([...aval1Guarantees, newAval1Guarantee.trim().toUpperCase()]);
+            setNewAval1Guarantee('');
+        }
+    };
+    const handleAddAval2Guarantee = () => {
+        if (newAval2Guarantee.trim()) {
+            setAval2Guarantees([...aval2Guarantees, newAval2Guarantee.trim().toUpperCase()]);
+            setNewAval2Guarantee('');
+        }
+    };
+    const handleAddAval3Guarantee = () => {
+        if (newAval3Guarantee.trim()) {
+            setAval3Guarantees([...aval3Guarantees, newAval3Guarantee.trim().toUpperCase()]);
+            setNewAval3Guarantee('');
+        }
+    };
     const [clientPhotoFile, setClientPhotoFile] = useState<File | null>(null);
     const [clientPhotoPreview, setClientPhotoPreview] = useState<string | null>(null);
     const [avalFacadeFile, setAvalFacadeFile] = useState<File | null>(null);
@@ -161,12 +186,185 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         }
     }
 
+    const getClientFormProgress = () => {
+        let total = 4; // Name, Address, Amount, Cellphone
+        let filled = 0;
+        if (clientName.trim()) filled++;
+        if (clientAddress.trim()) filled++;
+        if (Number(creditAmount) > 0) filled++;
+        if (cellphone.trim().length >= 10) filled++;
+
+        // Guarantees
+        total += 1;
+        const minG = supervisorFinanciera?.minGuarantees ?? 0;
+        if (guarantees.length >= minG) filled++;
+
+        // Photos
+        if (requireFacade) {
+            total++;
+            if (facadeFile || facadePreview) filled++;
+        }
+        if (requireClientPhoto) {
+            total++;
+            if (clientPhotoFile || clientPhotoPreview) filled++;
+        }
+
+        return Math.round((filled / total) * 100);
+    };
+
+    const getAvalFormProgress = () => {
+        let total = 0;
+        let filled = 0;
+
+        // Aval 1
+        total += 4;
+        if (avalName.trim()) filled++;
+        if (avalAddress.trim()) filled++;
+        if (avalCellphone.trim().length >= 10) filled++;
+        const minGAval = supervisorFinanciera?.minGuaranteesForAval ?? 0;
+        if (aval1Guarantees.length >= minGAval) filled++;
+
+        // Photos
+        if (requireGuarantorFacade) {
+            total++;
+            if (avalFacadeFile || avalFacadePreview) filled++;
+        }
+        if (requireGuarantorPhoto) {
+            total++;
+            if (avalPhotoFile || avalPhotoPreview) filled++;
+        }
+
+        // Aval 2
+        if (requiredAvales >= 2) {
+            total += 4;
+            if (aval2Name.trim()) filled++;
+            if (aval2Address.trim()) filled++;
+            if (aval2Cellphone.trim().length >= 10) filled++;
+            if (aval2Guarantees.length >= minGAval) filled++;
+        }
+
+        // Aval 3
+        if (requiredAvales >= 3) {
+            total += 4;
+            if (aval3Name.trim()) filled++;
+            if (aval3Address.trim()) filled++;
+            if (aval3Cellphone.trim().length >= 10) filled++;
+            if (aval3Guarantees.length >= minGAval) filled++;
+        }
+
+        return Math.round((filled / total) * 100);
+    };
+
+    const getClientDetailProgress = (client: any) => {
+        let total = 4;
+        let filled = 0;
+        if (client.name?.trim()) filled++;
+        if (client.address?.trim()) filled++;
+        if (Number(client.creditAmount) > 0) filled++;
+        if (client.cellphone?.trim().length >= 10) filled++;
+
+        const minG = supervisorFinanciera?.minGuarantees ?? 0;
+        total += 1;
+        if ((client.guarantees?.length || 0) >= minG) filled++;
+
+        if (requireFacade) {
+            total++;
+            if (client.facadeUrl) filled++;
+        }
+        if (requireClientPhoto) {
+            total++;
+            if (client.clientPhotoUrl) filled++;
+        }
+
+        return Math.round((filled / total) * 100);
+    };
+
+    const getAvalDetailProgress = (client: any) => {
+        let total = 0;
+        let filled = 0;
+
+        const minGAval = supervisorFinanciera?.minGuaranteesForAval ?? 0;
+        const list = client.avales && client.avales.length > 0
+            ? client.avales
+            : [{
+                name: client.avalName,
+                address: client.avalAddress,
+                cellphone: client.avalCellphone,
+                facadeUrl: client.avalFacadeUrl,
+                photoUrl: client.avalPhotoUrl,
+                guarantees: []
+            }];
+
+        // Determine required avales based on client creditAmount
+        const amt = Number(client.creditAmount || 0);
+        let reqAvals = 1;
+        if (supervisorFinanciera?.guarantorRules && supervisorFinanciera.guarantorRules.length > 0) {
+            const match = supervisorFinanciera.guarantorRules.find(r => amt >= r.minAmount && amt <= r.maxAmount);
+            if (match) reqAvals = match.requiredGuarantors;
+            else {
+                const sortedRules = [...supervisorFinanciera.guarantorRules].sort((a, b) => b.minAmount - a.minAmount);
+                if (amt > sortedRules[0].maxAmount) {
+                    reqAvals = sortedRules[0].requiredGuarantors;
+                }
+            }
+        }
+
+        list.slice(0, reqAvals).forEach((av: any, idx: number) => {
+            total += 4;
+            if (av.name?.trim()) filled++;
+            if (av.address?.trim()) filled++;
+            if (av.cellphone?.trim().length >= 10) filled++;
+            if ((av.guarantees?.length || 0) >= minGAval) filled++;
+
+            if (idx === 0) {
+                if (requireGuarantorFacade) {
+                    total++;
+                    if (av.facadeUrl || client.avalFacadeUrl) filled++;
+                }
+                if (requireGuarantorPhoto) {
+                    total++;
+                    if (av.photoUrl || client.avalPhotoUrl) filled++;
+                }
+            }
+        });
+
+        // If list length is less than required, add the missing ones to the total
+        if (list.length < reqAvals) {
+            total += (reqAvals - list.length) * 4;
+        }
+
+        return total > 0 ? Math.round((filled / total) * 100) : 0;
+    };
+
+    const getProgressStyles = (pct: number) => {
+        if (pct < 20) {
+            return {
+                pill: "bg-red-50 border-red-100/50 text-red-700",
+                barBg: "bg-red-100/60",
+                barFill: "bg-red-500"
+            };
+        } else if (pct < 100) {
+            return {
+                pill: "bg-blue-50 border-blue-100/50 text-blue-700",
+                barBg: "bg-blue-100/60",
+                barFill: "bg-blue-600"
+            };
+        } else {
+            return {
+                pill: "bg-emerald-50 border-emerald-100/50 text-emerald-700",
+                barBg: "bg-emerald-100/60",
+                barFill: "bg-emerald-600"
+            };
+        }
+    };
+
     const videoRef = useRef<HTMLVideoElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const animationFrameRef = useRef<number>(0);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const clientPhotoInputRef = useRef<HTMLInputElement>(null);
     const guarantorPhotoInputRef = useRef<HTMLInputElement>(null);
+    const guarantorFacadeInputRef = useRef<HTMLInputElement>(null);
 
     // Grouping logic for clients
     const supervisorClients = clients.filter(c => c.supervisorId === supervisor.id && !c.isArchived);
@@ -176,6 +374,55 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         c.financieraId === supervisor.financieraId &&
         !c.isArchived
     ), [clients, supervisor.financieraId]);
+
+    const financieraGuarantorCandidates = useMemo(() => {
+        const list: { name: string; address: string; cellphone: string; facadeUrl?: string; photoUrl?: string }[] = [];
+        const seen = new Set<string>();
+
+        financieraClients.forEach(c => {
+            const normalized = c.name.trim().toUpperCase();
+            if (!normalized || seen.has(normalized)) return;
+            seen.add(normalized);
+            list.push({
+                name: c.name,
+                address: c.address || '',
+                cellphone: c.cellphone || '',
+                facadeUrl: c.facadeUrl,
+                photoUrl: c.clientPhotoUrl
+            });
+        });
+
+        financieraClients.forEach(c => {
+            if (c.avales && Array.isArray(c.avales)) {
+                c.avales.forEach(av => {
+                    const normalized = av.name.trim().toUpperCase();
+                    if (!normalized || seen.has(normalized)) return;
+                    seen.add(normalized);
+                    list.push({
+                        name: av.name,
+                        address: av.address || '',
+                        cellphone: av.cellphone || '',
+                        facadeUrl: av.facadeUrl,
+                        photoUrl: av.photoUrl
+                    });
+                });
+            }
+            if (c.avalName) {
+                const normalized = c.avalName.trim().toUpperCase();
+                if (!normalized || seen.has(normalized)) return;
+                seen.add(normalized);
+                list.push({
+                    name: c.avalName,
+                    address: c.avalAddress || '',
+                    cellphone: c.avalCellphone || '',
+                    facadeUrl: c.avalFacadeUrl,
+                    photoUrl: c.avalPhotoUrl
+                });
+            }
+        });
+
+        return list;
+    }, [financieraClients]);
 
     const currentWeekClients = supervisorClients.filter(c => {
         if (!currentWeek) return false;
@@ -353,24 +600,6 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     };
 
     const handleRecordVisit = async (client: Client) => {
-        // Check completeness according to financiera rules
-        const fin = supervisorFinanciera;
-        const requireFacade = fin?.requireFacade ?? false;
-        const requireClientPhoto = fin?.requireClientPhoto ?? false;
-        const minG = fin?.minGuarantees ?? 0;
-
-        const isComplete =
-            (!requireFacade || !!client.facadeUrl) &&
-            (!requireClientPhoto || !!client.clientPhotoUrl) &&
-            (client.guarantees.length >= minG);
-
-        if (!isComplete) {
-            setScanStatus('idle');
-            alert("REGISTRO PENDIENTE: Este cliente no tiene las fotos o datos obligatorios requeridos por la financiera. Debe editar el cliente para completarlos antes de que pueda marcarse como VISITADO.");
-            setView('list');
-            return;
-        }
-
         setScanStatus('recording_visit');
         try {
             const loc = await getCurrentLocation();
@@ -380,27 +609,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     };
 
     const handleRegister = async () => {
-        if (!clientName || !clientAddress || !creditAmount || cellphone.length !== 10) {
-            alert("Verifique datos del cliente (Celular debe ser 10 dígitos)"); return;
-        }
-        if (!avalName || !avalAddress || avalCellphone.length !== 10) {
-            alert("Verifique datos del aval (Celular debe ser 10 dígitos)"); return;
-        }
-
-        if (requiredAvales >= 2) {
-            if (!aval2Name || !aval2Address || aval2Cellphone.length !== 10) {
-                alert("Verifique datos del aval 2"); return;
-            }
-        }
-        if (requiredAvales >= 3) {
-            if (!aval3Name || !aval3Address || aval3Cellphone.length !== 10) {
-                alert("Verifique datos del aval 3"); return;
-            }
-        }
-
-        if (guarantees.length < minGuarantees) {
-            alert(`Se requieren al menos ${minGuarantees} garantía(s) para registrar al cliente.`);
-            return;
+        if (!clientName || clientName.trim() === '') {
+            alert("Por favor ingrese el nombre del cliente."); return;
         }
 
         // Photos are now optional as per user request
@@ -504,7 +714,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     address: avalAddress.toUpperCase(),
                     cellphone: avalCellphone,
                     facadeUrl: aval1IsClient ? (aval1SelectedClient?.facadeUrl || '') : '',
-                    photoUrl: aval1IsClient ? (aval1SelectedClient?.clientPhotoUrl || '') : ''
+                    photoUrl: aval1IsClient ? (aval1SelectedClient?.clientPhotoUrl || '') : '',
+                    guarantees: aval1Guarantees.map(g => ({ description: g.toUpperCase() }))
                 }
             ];
             if (requiredAvales >= 2) {
@@ -513,10 +724,18 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     address: aval2Address.toUpperCase(),
                     cellphone: aval2Cellphone,
                     facadeUrl: aval2IsClient ? (aval2SelectedClient?.facadeUrl || '') : '',
-                    photoUrl: aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : ''
+                    photoUrl: aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : '',
+                    guarantees: aval2Guarantees.map(g => ({ description: g.toUpperCase() }))
                 });
             }
-            if (requiredAvales >= 3) currentAvales.push({ name: aval3Name.toUpperCase(), address: aval3Address.toUpperCase(), cellphone: aval3Cellphone });
+            if (requiredAvales >= 3) {
+                currentAvales.push({
+                    name: aval3Name.toUpperCase(),
+                    address: aval3Address.toUpperCase(),
+                    cellphone: aval3Cellphone,
+                    guarantees: aval3Guarantees.map(g => ({ description: g.toUpperCase() }))
+                });
+            }
 
             const isComplete =
                 (!requireFacade || !!facadeUrl) &&
@@ -610,18 +829,49 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
     const handleUpdateClientData = async () => {
         if (!editingClient) return;
-        if (!clientName || !clientAddress || !creditAmount || cellphone.length !== 10) {
-            alert("Verifique datos del cliente"); return;
-        }
         setIsUploading(true);
         try {
+            // Optional upload for new photos if they exist
+            let facadeUrl = editingClient.facadeUrl || '';
+            let clientPhotoUrl = editingClient.clientPhotoUrl || '';
+            let avalFacadeUrl = editingClient.avalFacadeUrl || (editingClient.avales?.[0]?.facadeUrl || '');
+            let avalPhotoUrl = editingClient.avalPhotoUrl || (editingClient.avales?.[0]?.photoUrl || '');
+
+            if (supervisor.canEditPhotos) {
+                if (facadeFile) {
+                    const compressed = await compressImage(facadeFile);
+                    const ref_ = ref(storage, `facades/${editingClient.id}_${Date.now()}.jpg`);
+                    const snap = await uploadBytes(ref_, compressed);
+                    facadeUrl = await getDownloadURL(snap.ref);
+                }
+                if (clientPhotoFile) {
+                    const compressed = await compressImage(clientPhotoFile);
+                    const ref_ = ref(storage, `clients/${editingClient.id}_${Date.now()}.jpg`);
+                    const snap = await uploadBytes(ref_, compressed);
+                    clientPhotoUrl = await getDownloadURL(snap.ref);
+                }
+                if (avalFacadeFile) {
+                    const compressed = await compressImage(avalFacadeFile);
+                    const ref_ = ref(storage, `aval_facades/${editingClient.id}_${Date.now()}.jpg`);
+                    const snap = await uploadBytes(ref_, compressed);
+                    avalFacadeUrl = await getDownloadURL(snap.ref);
+                }
+                if (avalPhotoFile) {
+                    const compressed = await compressImage(avalPhotoFile);
+                    const ref_ = ref(storage, `aval_photos/${editingClient.id}_${Date.now()}.jpg`);
+                    const snap = await uploadBytes(ref_, compressed);
+                    avalPhotoUrl = await getDownloadURL(snap.ref);
+                }
+            }
+
             const currentAvales: Guarantor[] = [
                 {
                     name: avalName.toUpperCase(),
                     address: avalAddress.toUpperCase(),
                     cellphone: avalCellphone,
-                    facadeUrl: aval1IsClient ? (aval1SelectedClient?.facadeUrl || '') : (editingClient.avales?.[0]?.facadeUrl || ''),
-                    photoUrl: aval1IsClient ? (aval1SelectedClient?.clientPhotoUrl || '') : (editingClient.avales?.[0]?.photoUrl || '')
+                    facadeUrl: aval1IsClient ? (aval1SelectedClient?.facadeUrl || '') : avalFacadeUrl,
+                    photoUrl: aval1IsClient ? (aval1SelectedClient?.clientPhotoUrl || '') : avalPhotoUrl,
+                    guarantees: aval1Guarantees.map(g => ({ description: g.toUpperCase() }))
                 }
             ];
             if (requiredAvales >= 2) {
@@ -630,10 +880,18 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     address: aval2Address.toUpperCase(),
                     cellphone: aval2Cellphone,
                     facadeUrl: aval2IsClient ? (aval2SelectedClient?.facadeUrl || '') : (editingClient.avales?.[1]?.facadeUrl || ''),
-                    photoUrl: aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : (editingClient.avales?.[1]?.photoUrl || '')
+                    photoUrl: aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : (editingClient.avales?.[1]?.photoUrl || ''),
+                    guarantees: aval2Guarantees.map(g => ({ description: g.toUpperCase() }))
                 });
             }
-            if (requiredAvales >= 3) currentAvales.push({ name: aval3Name.toUpperCase(), address: aval3Address.toUpperCase(), cellphone: aval3Cellphone });
+            if (requiredAvales >= 3) {
+                currentAvales.push({
+                    name: aval3Name.toUpperCase(),
+                    address: aval3Address.toUpperCase(),
+                    cellphone: aval3Cellphone,
+                    guarantees: aval3Guarantees.map(g => ({ description: g.toUpperCase() }))
+                });
+            }
 
             const updates: Partial<Client> = {
                 name: clientName.toUpperCase(),
@@ -645,31 +903,12 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 avalCellphone: avalCellphone,
                 avales: currentAvales,
                 guarantees: guarantees.map(g => ({ description: g.toUpperCase() })),
-                comments: clientComments.toUpperCase()
+                comments: clientComments.toUpperCase(),
+                facadeUrl,
+                clientPhotoUrl,
+                avalFacadeUrl,
+                avalPhotoUrl
             };
-
-            // Handle photo updates if supervisor has permission
-            if (supervisor.canEditPhotos) {
-                if (facadeFile) {
-                    const compressed = await compressImage(facadeFile);
-                    const ref_ = ref(storage, `facades/${editingClient.id}_${Date.now()}.jpg`);
-                    const snap = await uploadBytes(ref_, compressed);
-                    updates.facadeUrl = await getDownloadURL(snap.ref);
-                }
-                if (clientPhotoFile) {
-                    const compressed = await compressImage(clientPhotoFile);
-                    const ref_ = ref(storage, `clients/${editingClient.id}_${Date.now()}.jpg`);
-                    const snap = await uploadBytes(ref_, compressed);
-                    updates.clientPhotoUrl = await getDownloadURL(snap.ref);
-                }
-                if (avalFacadeFile) {
-                    const compressed = await compressImage(avalFacadeFile);
-                    const ref_ = ref(storage, `aval_facades/${editingClient.id}_${Date.now()}.jpg`);
-                    const snap = await uploadBytes(ref_, compressed);
-                    updates.avalFacadeUrl = await getDownloadURL(snap.ref);
-                    updates.avalVisitTimestamp = Date.now();
-                }
-            }
 
             await onUpdateClient(editingClient.id, updates);
             setEditingClient(null);
@@ -699,19 +938,28 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         setAvalAddress(client.avalAddress || '');
         setAvalCellphone(client.avalCellphone || '');
 
-        // NEW: Populate multiple avales if they exist
-        if (client.avales && client.avales.length > 1) {
-            setAval2Name(client.avales[1].name);
-            setAval2Address(client.avales[1].address || '');
-            setAval2Cellphone(client.avales[1].cellphone || '');
-            if (client.avales.length > 2) {
-                setAval3Name(client.avales[2].name);
-                setAval3Address(client.avales[2].address || '');
-                setAval3Cellphone(client.avales[2].cellphone || '');
+        // NEW: Populate multiple avales and their guarantees if they exist
+        if (client.avales && client.avales.length > 0) {
+            setAval1Guarantees(client.avales[0].guarantees || []);
+            if (client.avales.length > 1) {
+                setAval2Name(client.avales[1].name);
+                setAval2Address(client.avales[1].address || '');
+                setAval2Cellphone(client.avales[1].cellphone || '');
+                setAval2Guarantees(client.avales[1].guarantees || []);
+                if (client.avales.length > 2) {
+                    setAval3Name(client.avales[2].name);
+                    setAval3Address(client.avales[2].address || '');
+                    setAval3Cellphone(client.avales[2].cellphone || '');
+                    setAval3Guarantees(client.avales[2].guarantees || []);
+                }
+            } else {
+                setAval2Name(''); setAval2Address(''); setAval2Cellphone(''); setAval2Guarantees([]);
+                setAval3Name(''); setAval3Address(''); setAval3Cellphone(''); setAval3Guarantees([]);
             }
         } else {
-            setAval2Name(''); setAval2Address(''); setAval2Cellphone('');
-            setAval3Name(''); setAval3Address(''); setAval3Cellphone('');
+            setAval1Guarantees([]);
+            setAval2Name(''); setAval2Address(''); setAval2Cellphone(''); setAval2Guarantees([]);
+            setAval3Name(''); setAval3Address(''); setAval3Cellphone(''); setAval3Guarantees([]);
         }
 
         setGuarantees(client.guarantees ? client.guarantees.map(g => g.description) : []);
@@ -721,6 +969,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         setFacadePreview(client.facadeUrl || null);
         setClientPhotoPreview(client.clientPhotoUrl || null);
         setAvalFacadePreview(client.avalFacadeUrl || null);
+        setAvalPhotoPreview(client.avalPhotoUrl || null);
     };
 
     const resetForm = () => {
@@ -735,6 +984,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         setAvalFacadeFile(null); setAvalFacadePreview(null);
         setAvalPhotoFile(null); setAvalPhotoPreview(null);
         setGuarantees([]); setAvalGuarantees([]); setScannedCode('');
+        setAval1Guarantees([]); setAval2Guarantees([]); setAval3Guarantees([]);
+        setNewAval1Guarantee(''); setNewAval2Guarantee(''); setNewAval3Guarantee('');
         setTargetAvalClient(null); setScanStatus('idle');
         setEditingClient(null); setCoincidenceClient(null);
         setAval1IsClient(false); setAval2IsClient(false);
@@ -1002,7 +1253,11 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                             <p className="text-[9px] text-slate-400 font-mono font-bold uppercase mb-2">{client.id}</p>
                             <div className="flex flex-wrap gap-2 text-[10px] uppercase font-black text-slate-500">
                                 <span className="flex items-center gap-1 bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg"><DollarSign className="w-3 h-3" /> ${client.creditAmount}</span>
-                                <span className="flex items-center gap-1 bg-slate-50 text-slate-600 px-2 py-1 rounded-lg"><Smartphone className="w-3 h-3" /> {client.cellphone}</span>
+                                {client.cellphone && (
+                                    <a href={`tel:${client.cellphone}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-indigo-600 px-2 py-1 rounded-lg transition-colors">
+                                        <Smartphone className="w-3 h-3" /> {client.cellphone}
+                                    </a>
+                                )}
                                 {(() => {
                                     const clientFin = financieras.find(f => f.id === client.financieraId);
                                     const completion = checkClientCompleteness(client, clientFin);
@@ -1040,30 +1295,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     </div>
                 </div>
 
-                <div className="flex justify-between items-center mt-1">
-                    <div className="flex-1 pr-4">
-                        <div className="flex flex-wrap gap-2">
-                            {(client.avales && client.avales.length > 0 ? client.avales : [{ name: client.avalName, visitTimestamp: client.avalVisitTimestamp, facadeUrl: client.avalFacadeUrl, photoUrl: client.avalPhotoUrl }]).map((aval, idx) => {
-                                const isVisited = !!aval.visitTimestamp;
-                                const isPartiallyDone = !isVisited && (!!aval.facadeUrl || !!aval.photoUrl || (aval.guarantees && aval.guarantees.length > 0));
-
-                                return (
-                                    <button
-                                        key={idx}
-                                        onClick={(e) => { e.stopPropagation(); setTargetAvalClient(client); setSelectedAvalIndex(idx); setView('aval_visit'); }}
-                                        className={`flex-1 min-w-[120px] py-1.5 px-3 rounded-lg font-black text-[9px] uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 shadow-sm active:scale-95 ${isVisited ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                                isPartiallyDone ? 'bg-amber-100 text-amber-700 border border-amber-300' :
-                                                    'bg-blue-600 text-white shadow-blue-100'
-                                            }`}
-                                    >
-                                        {isVisited ? <CheckCircle className="w-3.5 h-3.5" /> : isPartiallyDone ? <AlertTriangle className="w-3.5 h-3.5 animate-pulse" /> : <UserCheck className="w-3.5 h-3.5" />}
-                                        {isPartiallyDone ? 'Aval ' + (idx + 1) + ' - PENDIENTE' : 'Aval ' + (idx + 1) + (aval.name ? ` - ${aval.name.split(' ')[0]}` : '')}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-
+                <div className="flex justify-end items-center mt-2 pt-2 border-t border-slate-50">
                     <div className="flex items-center gap-2">
                         <a
                             href={`https://www.google.com/maps/search/?api=1&query=${client.latitude},${client.longitude}`}
@@ -1130,6 +1362,23 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                         setAvalPhotoFile(c);
                         const r = new FileReader();
                         r.onload = () => setAvalPhotoPreview(r.result as string);
+                        r.readAsDataURL(c);
+                    }
+                }}
+            />
+
+            <input
+                type="file"
+                capture="environment"
+                ref={guarantorFacadeInputRef}
+                className="hidden"
+                onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                        const c = await compressImage(f);
+                        setAvalFacadeFile(c);
+                        const r = new FileReader();
+                        r.onload = () => setAvalFacadePreview(r.result as string);
                         r.readAsDataURL(c);
                     }
                 }}
@@ -1511,38 +1760,147 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                             )}
                         </div>
 
-                        <div className="space-y-4">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">Datos del Solicitante</h4>
+                        {/* SECCIÓN CLIENTE */}
+                        <div className="space-y-6 bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-pink-50/30 p-6 rounded-[2rem] border border-indigo-200/80 shadow-sm animate-in zoom-in-95">
+                            <h3 className="text-sm font-black text-indigo-900 uppercase tracking-wider flex items-center justify-between w-full">
+                                <span className="flex items-center gap-2">
+                                    <User className="w-4 h-4 text-indigo-600" /> DATOS DEL CLIENTE
+                                </span>
+                                {(() => {
+                                    const pct = getClientFormProgress();
+                                    const styles = getProgressStyles(pct);
+                                    return (
+                                        <span className={`flex items-center gap-2 border px-2 py-0.5 rounded-full text-[8.5px] font-black transition-colors ${styles.pill}`}>
+                                            <span className={`w-20 h-1 rounded-full overflow-hidden block ${styles.barBg}`}>
+                                                <span className={`h-full block transition-all duration-300 ${styles.barFill}`} style={{ width: `${pct}%` }}></span>
+                                            </span>
+                                            {pct}%
+                                        </span>
+                                    );
+                                })()}
+                            </h3>
+
+                            <div className="space-y-4">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">Datos Generales</h4>
+                                <div className="space-y-3">
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={clientName}
+                                            onChange={e => setClientName(e.target.value.toUpperCase())}
+                                            disabled={isRenewalMode && !!clientName}
+                                            className={`w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase ${isRenewalMode && clientName ? 'opacity-60 bg-slate-50 cursor-not-allowed' : ''}`}
+                                            placeholder="Nombre completo"
+                                        />
+                                        {isRenewalMode && clientName && (
+                                            <div className="absolute right-4 top-1/2 -translate-y-1/2">
+                                                <Lock className="w-4 h-4 text-slate-400" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase" placeholder="Domicilio" />
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <input type="number" inputMode="numeric" value={creditAmount} onChange={e => setCreditAmount(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Monto $" />
+                                        <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={cellphone} onChange={e => setCellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Celular" />
+                                    </div>
+                                </div>
+                            </div>
+
                             <div className="space-y-3">
-                                <div className="relative">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-green-500 pl-3 flex items-center gap-2">
+                                    <Package className="w-4 h-4 text-green-500" /> GARANTIAS DEL CLIENTE ({guarantees.length})
+                                </h4>
+                                <div className="flex flex-col gap-3">
                                     <input
                                         type="text"
-                                        value={clientName}
-                                        onChange={e => setClientName(e.target.value.toUpperCase())}
-                                        disabled={isRenewalMode && !!clientName}
-                                        className={`w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase ${isRenewalMode && clientName ? 'opacity-60 bg-slate-50 cursor-not-allowed' : ''}`}
-                                        placeholder="Nombre completo *"
+                                        value={newGuarantee}
+                                        onChange={e => setNewGuarantee(e.target.value.toUpperCase())}
+                                        onKeyDown={(e) => e.key === 'Enter' && handleAddGuarantee()}
+                                        className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-green-500 outline-none transition-shadow uppercase text-sm"
+                                        placeholder="Ej: TV Samsung 50 pulgadas"
                                     />
-                                    {isRenewalMode && clientName && (
-                                        <div className="absolute right-4 top-1/2 -translate-y-1/2">
-                                            <Lock className="w-4 h-4 text-slate-400" />
-                                        </div>
+                                    <button
+                                        onClick={handleAddGuarantee}
+                                        className="w-full py-3 bg-green-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center justify-center gap-2 hover:bg-green-700 active:scale-95 transition-all"
+                                    >
+                                        <Plus className="w-4 h-4" /> Agregar Artículo
+                                    </button>
+                                </div>
+                                <div className="space-y-2 mt-2">
+                                    {guarantees.length === 0 ? (
+                                        <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-2 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">Sin garantías registradas</p>
+                                    ) : (
+                                        guarantees.map((g, i) => (
+                                            <div key={i} className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{g}</span>
+                                                <button onClick={() => setGuarantees(guarantees.filter((_, idx) => idx !== i))} className="p-2 text-red-500 rounded-lg hover:bg-red-55"><Trash2 className="w-4 h-4" /></button>
+                                            </div>
+                                        ))
                                     )}
                                 </div>
-                                <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase" placeholder="Domicilio *" />
-                                <div className="grid grid-cols-2 gap-3">
-                                    <input type="number" inputMode="numeric" value={creditAmount} onChange={e => setCreditAmount(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Monto $" />
-                                    <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={cellphone} onChange={e => setCellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Celular (10 d)" />
+                            </div>
+
+                            {(requireFacade || requireClientPhoto) && (
+                                <div className="space-y-3">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">FOTOGRAFIAS DEL CLIENTE</h4>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {requireFacade && (
+                                            <div className="space-y-2">
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Fachada Cliente</label>
+                                                <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => fileInputRef.current?.click()}>
+                                                    {facadePreview ? <img src={facadePreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><Home className="w-8 h-8 text-indigo-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                </div>
+                                            </div>
+                                        )}
+                                        {requireClientPhoto && (
+                                            <div className="space-y-2">
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Foto Cliente</label>
+                                                <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => clientPhotoInputRef.current?.click()}>
+                                                    {clientPhotoPreview ? <img src={clientPhotoPreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><User className="w-8 h-8 text-indigo-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
+                            )}
+
+                            <div className="space-y-3">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-amber-500 pl-3 flex items-center gap-2">
+                                    <MessageSquare className="w-4 h-4 text-amber-500" /> Comentarios Extras (Opcional)
+                                </h4>
+                                <textarea
+                                    value={clientComments}
+                                    onChange={e => setClientComments(e.target.value.toUpperCase())}
+                                    className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-amber-500 outline-none transition-shadow uppercase text-sm min-h-[80px]"
+                                    placeholder="Ej: Trabaja en la zapatería del centro, portón café..."
+                                />
                             </div>
                         </div>
 
-                        <div className="space-y-4">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-3">Datos del Aval{requiredAvales > 1 ? 'es' : ''}</h4>
+                        {/* SECCIÓN AVAL */}
+                        <div className="space-y-6 bg-gradient-to-br from-blue-50/70 via-sky-50/40 to-indigo-50/30 p-6 rounded-[2rem] border border-blue-200/80 shadow-sm animate-in zoom-in-95">
+                            <h3 className="text-sm font-black text-blue-900 uppercase tracking-wider flex items-center justify-between w-full">
+                                <span className="flex items-center gap-2">
+                                    <User className="w-4 h-4 text-blue-600" /> DATOS DEL AVAL
+                                </span>
+                                {(() => {
+                                    const pct = getAvalFormProgress();
+                                    const styles = getProgressStyles(pct);
+                                    return (
+                                        <span className={`flex items-center gap-2 border px-2 py-0.5 rounded-full text-[8.5px] font-black transition-colors ${styles.pill}`}>
+                                            <span className={`w-20 h-1 rounded-full overflow-hidden block ${styles.barBg}`}>
+                                                <span className={`h-full block transition-all duration-300 ${styles.barFill}`} style={{ width: `${pct}%` }}></span>
+                                            </span>
+                                            {pct}%
+                                        </span>
+                                    );
+                                })()}
+                            </h3>
+
                             {/* AVAL 1 */}
-                            <div className="space-y-3 bg-slate-50 p-4 rounded-3xl border border-slate-100 border-l-8 border-l-blue-100">
-                                <div className="flex items-center justify-between px-1">
-                                    <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Aval Principal</p>
+                            <div className="space-y-4 bg-white p-5 rounded-3xl border border-blue-100">
+                                <div className="flex items-center justify-between">
+                                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Aval Principal</p>
                                     <label className="flex items-center gap-2 cursor-pointer group">
                                         <input
                                             type="checkbox"
@@ -1564,31 +1922,33 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                 type="text"
                                                 value={aval1Search}
                                                 onChange={e => setAval1Search(e.target.value)}
-                                                className="w-full p-4 pl-10 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
-                                                placeholder="Buscar cliente en este ciclo..."
+                                                className="w-full p-4 pl-10 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-slate-50 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
+                                                placeholder="Buscar cliente o aval..."
                                             />
                                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                         </div>
                                         {aval1Search.length > 0 && (
-                                            <div className="max-h-[200px] overflow-y-auto border border-slate-100 rounded-2xl bg-white shadow-xl divide-y divide-slate-50 scrollbar-hide z-[10]">
-                                                {currentWeekClients
+                                            <div className="max-h-[150px] overflow-y-auto border border-slate-100 rounded-2xl bg-white shadow-xl divide-y divide-slate-50 scrollbar-hide z-[10]">
+                                                {financieraGuarantorCandidates
                                                     .filter(c => c.name.toUpperCase().includes(aval1Search.toUpperCase()))
-                                                    .map(c => (
+                                                    .map((c, idx) => (
                                                         <button
-                                                            key={c.id}
+                                                            key={idx}
                                                             type="button"
                                                             onClick={() => {
-                                                                setAval1SelectedClient(c);
+                                                                setAval1SelectedClient({ id: 'AUTO', name: c.name, address: c.address, cellphone: c.cellphone, facadeUrl: c.facadeUrl, clientPhotoUrl: c.photoUrl } as any);
                                                                 setAvalName(c.name);
                                                                 setAvalAddress(c.address || '');
                                                                 setAvalCellphone(c.cellphone || '');
+                                                                if (c.facadeUrl) setAvalFacadePreview(c.facadeUrl);
+                                                                if (c.photoUrl) setAvalPhotoPreview(c.photoUrl);
                                                                 setAval1Search('');
                                                             }}
-                                                            className="w-full p-4 text-left hover:bg-blue-50 transition-colors flex items-center justify-between group"
+                                                            className="w-full p-3 text-left hover:bg-blue-50 transition-colors flex items-center justify-between group"
                                                         >
                                                             <div className="flex flex-col">
-                                                                <span className="font-black text-slate-800 text-[11px] uppercase">{c.name}</span>
-                                                                <span className="text-[9px] text-slate-400 font-mono">{c.id}</span>
+                                                                <span className="font-black text-slate-800 text-[10px] uppercase">{c.name}</span>
+                                                                <span className="text-[8px] text-slate-400 font-mono">{c.cellphone}</span>
                                                             </div>
                                                             <UserCheck className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition-colors" />
                                                         </button>
@@ -1598,16 +1958,49 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                     </div>
                                 )}
 
-                                <input type="text" value={avalName} onChange={e => { setAvalName(e.target.value.toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo *" />
-                                <input type="text" value={avalAddress} onChange={e => { setAvalAddress(e.target.value.toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo *" />
-                                <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={avalCellphone} onChange={e => { setAvalCellphone(e.target.value.replace(/\D/g, '')); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular (10 dígitos) *" />
+                                <input type="text" value={avalName} onChange={e => { setAvalName(e.target.value.toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                <input type="text" value={avalAddress} onChange={e => { setAvalAddress(e.target.value.toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
+                                <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={avalCellphone} onChange={e => { setAvalCellphone(e.target.value.replace(/\D/g, '')); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
+
+                                {/* Garantías del Aval 1 */}
+                                <div className="space-y-3 pt-2 border-t border-slate-100">
+                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Garantías del Aval</p>
+                                    <div className="flex flex-col gap-3">
+                                        <input
+                                            type="text"
+                                            value={newAval1Guarantee}
+                                            onChange={e => setNewAval1Guarantee(e.target.value.toUpperCase())}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleAddAval1Guarantee()}
+                                            className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow uppercase text-sm"
+                                            placeholder="Ej: Moto Italika 125cc"
+                                        />
+                                        <button
+                                            onClick={handleAddAval1Guarantee}
+                                            className="w-full py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all"
+                                        >
+                                            <Plus className="w-4 h-4" /> Agregar Artículo
+                                        </button>
+                                    </div>
+                                    <div className="space-y-2 mt-2">
+                                        {aval1Guarantees.length === 0 ? (
+                                            <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-2 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">Sin garantías registradas</p>
+                                        ) : (
+                                            aval1Guarantees.map((g, i) => (
+                                                <div key={i} className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                                                    <span className="text-xs font-black text-slate-700 uppercase truncate">{g}</span>
+                                                    <button onClick={() => setAval1Guarantees(aval1Guarantees.filter((_, idx) => idx !== i))} className="p-2 text-red-500 rounded-lg hover:bg-red-55"><Trash2 className="w-4 h-4" /></button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
                             </div>
 
                             {/* AVAL 2 */}
                             {requiredAvales >= 2 && (
-                                <div className="space-y-3 bg-blue-50/50 p-4 rounded-3xl border border-blue-100 border-l-8 border-l-blue-200 animate-in slide-in-from-top-2">
-                                    <div className="flex items-center justify-between px-1">
-                                        <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Segundo Aval (Requerido por monto)</p>
+                                <div className="space-y-4 bg-white p-5 rounded-3xl border border-blue-100">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Segundo Aval (Requerido)</p>
                                         <label className="flex items-center gap-2 cursor-pointer group">
                                             <input
                                                 type="checkbox"
@@ -1616,7 +2009,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                     setAval2IsClient(e.target.checked);
                                                     if (!e.target.checked) setAval2SelectedClient(null);
                                                 }}
-                                                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-blue-200"
+                                                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
                                             />
                                             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest group-hover:text-blue-600 transition-colors">¿Es cliente?</span>
                                         </label>
@@ -1629,31 +2022,31 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                     type="text"
                                                     value={aval2Search}
                                                     onChange={e => setAval2Search(e.target.value)}
-                                                    className="w-full p-4 pl-10 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
-                                                    placeholder="Buscar cliente en este ciclo..."
+                                                    className="w-full p-4 pl-10 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-slate-50 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    placeholder="Buscar cliente o aval..."
                                                 />
                                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                             </div>
                                             {aval2Search.length > 0 && (
-                                                <div className="max-h-[200px] overflow-y-auto border border-slate-100 rounded-2xl bg-white shadow-xl divide-y divide-slate-50 scrollbar-hide z-[10]">
-                                                    {currentWeekClients
+                                                <div className="max-h-[150px] overflow-y-auto border border-slate-100 rounded-2xl bg-white shadow-xl divide-y divide-slate-50 scrollbar-hide z-[10]">
+                                                    {financieraGuarantorCandidates
                                                         .filter(c => c.name.toUpperCase().includes(aval2Search.toUpperCase()))
-                                                        .map(c => (
+                                                        .map((c, idx) => (
                                                             <button
-                                                                key={c.id}
+                                                                key={idx}
                                                                 type="button"
                                                                 onClick={() => {
-                                                                    setAval2SelectedClient(c);
+                                                                    setAval2SelectedClient({ id: 'AUTO', name: c.name, address: c.address, cellphone: c.cellphone, facadeUrl: c.facadeUrl, clientPhotoUrl: c.photoUrl } as any);
                                                                     setAval2Name(c.name);
                                                                     setAval2Address(c.address || '');
                                                                     setAval2Cellphone(c.cellphone || '');
                                                                     setAval2Search('');
                                                                 }}
-                                                                className="w-full p-4 text-left hover:bg-blue-50 transition-colors flex items-center justify-between group"
+                                                                className="w-full p-3 text-left hover:bg-blue-50 transition-colors flex items-center justify-between group"
                                                             >
                                                                 <div className="flex flex-col">
-                                                                    <span className="font-black text-slate-800 text-[11px] uppercase">{c.name}</span>
-                                                                    <span className="text-[9px] text-slate-400 font-mono">{c.id}</span>
+                                                                    <span className="font-black text-slate-800 text-[10px] uppercase">{c.name}</span>
+                                                                    <span className="text-[8px] text-slate-400 font-mono">{c.cellphone}</span>
                                                                 </div>
                                                                 <UserCheck className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition-colors" />
                                                             </button>
@@ -1663,143 +2056,106 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                         </div>
                                     )}
 
-                                    <input type="text" value={aval2Name} onChange={e => { setAval2Name(e.target.value.toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo *" />
-                                    <input type="text" value={aval2Address} onChange={e => { setAval2Address(e.target.value.toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo *" />
-                                    <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={aval2Cellphone} onChange={e => { setAval2Cellphone(e.target.value.replace(/\D/g, '')); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular (10 dígitos) *" />
+                                    <input type="text" value={aval2Name} onChange={e => { setAval2Name(e.target.value.toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                    <input type="text" value={aval2Address} onChange={e => { setAval2Address(e.target.value.toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
+                                    <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={aval2Cellphone} onChange={e => { setAval2Cellphone(e.target.value.replace(/\D/g, '')); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
+
+                                    {/* Garantías del Aval 2 */}
+                                    <div className="space-y-3 pt-2 border-t border-slate-100">
+                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Garantías del Aval 2</p>
+                                        <div className="flex flex-col gap-3">
+                                            <input
+                                                type="text"
+                                                value={newAval2Guarantee}
+                                                onChange={e => setNewAval2Guarantee(e.target.value.toUpperCase())}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleAddAval2Guarantee()}
+                                                className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow uppercase text-sm"
+                                                placeholder="Garantía de Aval 2"
+                                            />
+                                            <button onClick={handleAddAval2Guarantee} className="w-full py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all">
+                                                <Plus className="w-4 h-4" /> Agregar Artículo
+                                            </button>
+                                        </div>
+                                        <div className="space-y-2 mt-2">
+                                            {aval2Guarantees.length === 0 ? (
+                                                <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-2 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">Sin garantías registradas</p>
+                                            ) : (
+                                                aval2Guarantees.map((g, i) => (
+                                                    <div key={i} className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                                                        <span className="text-xs font-black text-slate-700 uppercase truncate">{g}</span>
+                                                        <button onClick={() => setAval2Guarantees(aval2Guarantees.filter((_, idx) => idx !== i))} className="p-2 text-red-500 rounded-lg hover:bg-red-55"><Trash2 className="w-4 h-4" /></button>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
                             )}
 
                             {/* AVAL 3 */}
                             {requiredAvales >= 3 && (
-                                <div className="space-y-3 bg-blue-50/50 p-4 rounded-3xl border border-blue-100 animate-in slide-in-from-top-2">
-                                    <div className="flex items-center justify-between px-1">
-                                        <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Tercer Aval (Requerido por monto)</p>
+                                <div className="space-y-4 bg-white p-5 rounded-3xl border border-blue-100">
+                                    <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Tercer Aval (Requerido)</p>
+                                    <input type="text" value={aval3Name} onChange={e => setAval3Name(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                    <input type="text" value={aval3Address} onChange={e => setAval3Address(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
+                                    <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={aval3Cellphone} onChange={e => setAval3Cellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
+
+                                    {/* Garantías del Aval 3 */}
+                                    <div className="space-y-3 pt-2 border-t border-slate-100">
+                                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Garantías del Aval 3</p>
+                                        <div className="flex flex-col gap-3">
+                                            <input
+                                                type="text"
+                                                value={newAval3Guarantee}
+                                                onChange={e => setNewAval3Guarantee(e.target.value.toUpperCase())}
+                                                onKeyDown={(e) => e.key === 'Enter' && handleAddAval3Guarantee()}
+                                                className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow uppercase text-sm"
+                                                placeholder="Garantía de Aval 3"
+                                            />
+                                            <button onClick={handleAddAval3Guarantee} className="w-full py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all">
+                                                <Plus className="w-4 h-4" /> Agregar Artículo
+                                            </button>
+                                        </div>
+                                        <div className="space-y-2 mt-2">
+                                            {aval3Guarantees.length === 0 ? (
+                                                <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-2 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">Sin garantías registradas</p>
+                                            ) : (
+                                                aval3Guarantees.map((g, i) => (
+                                                    <div key={i} className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                                                        <span className="text-xs font-black text-slate-700 uppercase truncate">{g}</span>
+                                                        <button onClick={() => setAval3Guarantees(aval3Guarantees.filter((_, idx) => idx !== i))} className="p-2 text-red-500 rounded-lg hover:bg-red-55"><Trash2 className="w-4 h-4" /></button>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
                                     </div>
-                                    <input type="text" value={aval3Name} onChange={e => setAval3Name(e.target.value.toUpperCase())} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo *" />
-                                    <input type="text" value={aval3Address} onChange={e => setAval3Address(e.target.value.toUpperCase())} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo *" />
-                                    <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={aval3Cellphone} onChange={e => setAval3Cellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular (10 dígitos) *" />
                                 </div>
                             )}
-                        </div>
 
-                        <div className="space-y-3 bg-slate-50 p-4 rounded-3xl border border-slate-100">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-amber-500 pl-3 flex items-center gap-2">
-                                <MessageSquare className="w-4 h-4" /> Comentarios Extras (Opcional)
-                            </h4>
-                            <textarea
-                                value={clientComments}
-                                onChange={e => setClientComments(e.target.value.toUpperCase())}
-                                className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-amber-500 outline-none transition-shadow uppercase text-sm min-h-[100px]"
-                                placeholder="Ej: Trabaja en la zapatería del centro, portón café..."
-                            />
-                        </div>
-
-                        <div className="space-y-2">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">FOTOGRAFIAS DEL CLIENTE</h4>
-                            <div className="grid grid-cols-2 gap-3">
-                                {/* FACHADA */}
-                                <div className="space-y-2">
-                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Fachada (Opcional)</label>
-                                    <div
-                                        className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer active:bg-slate-100 transition-all shadow-inner relative group"
-                                        onClick={() => fileInputRef.current?.click()}
-                                    >
-                                        {facadePreview ? (
-                                            <>
-                                                <img src={facadePreview} className="w-full h-full object-cover" />
-                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                    <RefreshCw className="w-6 h-6 text-white" />
+                            {/* FOTOGRAFIAS DEL AVAL (Condicionales según Financiera) */}
+                            {(requireGuarantorFacade || requireGuarantorPhoto) && (
+                                <div className="space-y-3 bg-white p-5 rounded-3xl border border-blue-100">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">FOTOGRAFIAS DEL AVAL</h4>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        {requireGuarantorFacade && (
+                                            <div className="space-y-2">
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Fachada Aval</label>
+                                                <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => guarantorFacadeInputRef.current?.click()}>
+                                                    {avalFacadePreview ? <img src={avalFacadePreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><Home className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
                                                 </div>
-                                            </>
-                                        ) : (
-                                            <div className="text-center p-4 space-y-1">
-                                                <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center mx-auto text-indigo-500">
-                                                    <Home className="w-5 h-5" />
+                                            </div>
+                                        )}
+                                        {requireGuarantorPhoto && (
+                                            <div className="space-y-2">
+                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Foto Aval</label>
+                                                <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => guarantorPhotoInputRef.current?.click()}>
+                                                    {avalPhotoPreview ? <img src={avalPhotoPreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><User className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
                                                 </div>
-                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Tocar para Foto</p>
                                             </div>
                                         )}
                                     </div>
                                 </div>
-
-                                {/* FOTO CLIENTE */}
-                                <div className="space-y-2 animate-in zoom-in-95">
-                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Cliente (Opcional)</label>
-                                    <div
-                                        className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer active:bg-slate-100 transition-all shadow-inner relative group"
-                                        onClick={() => clientPhotoInputRef.current?.click()}
-                                    >
-                                        {clientPhotoPreview ? (
-                                            <>
-                                                <img src={clientPhotoPreview} className="w-full h-full object-cover" />
-                                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                                    <RefreshCw className="w-6 h-6 text-white" />
-                                                </div>
-                                            </>
-                                        ) : (
-                                            <div className="text-center p-4 space-y-1">
-                                                <div className="w-10 h-10 bg-indigo-50 rounded-full flex items-center justify-center mx-auto text-indigo-500">
-                                                    <User className="w-5 h-5" />
-                                                </div>
-                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-tighter">Tocar para Foto</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="space-y-3 bg-slate-50 p-4 rounded-3xl border border-slate-100">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-green-500 pl-3 flex items-center gap-2">
-                                <Package className="w-4 h-4" /> GARANTIAS DEL CLIENTE ({guarantees.length})
-                                {minGuarantees > 0 && guarantees.length < minGuarantees && (
-                                    <span className="text-red-500 text-[9px] ml-auto font-bold animate-pulse">REQUERIDO: {minGuarantees} (Faltan {minGuarantees - guarantees.length})</span>
-                                )}
-                                {minGuarantees > 0 && guarantees.length >= minGuarantees && (
-                                    <span className="text-green-600 text-[9px] ml-auto font-bold flex items-center gap-1"><CheckCircle className="w-3 h-3" /> CUMPLIDO</span>
-                                )}
-                            </h4>
-
-                            {/* INPUT Y BOTÓN APILADOS PARA MÓVIL */}
-                            <div className="flex flex-col gap-3">
-                                <input
-                                    type="text"
-                                    value={newGuarantee}
-                                    onChange={e => setNewGuarantee(e.target.value.toUpperCase())}
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddGuarantee()}
-                                    className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-green-500 outline-none transition-shadow uppercase text-sm"
-                                    placeholder="Ej: TV Samsung 50 pulgadas"
-                                />
-                                <button
-                                    onClick={handleAddGuarantee}
-                                    className="w-full py-4 bg-green-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-green-100 flex items-center justify-center gap-2 hover:bg-green-700 active:scale-95 transition-all"
-                                >
-                                    <Plus className="w-5 h-5" /> Agregar Artículo
-                                </button>
-                            </div>
-
-                            {/* LISTA VERTICAL DE GARANTÍAS */}
-                            <div className="space-y-2 mt-2">
-                                {guarantees.length === 0 && (
-                                    <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-4 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">
-                                        Lista vacía
-                                    </p>
-                                )}
-                                {guarantees.map((g, i) => (
-                                    <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center animate-in slide-in-from-bottom-1">
-                                        <div className="flex items-center gap-3 overflow-hidden">
-                                            <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
-                                            <span className="text-xs font-black text-slate-700 uppercase truncate">{g}</span>
-                                        </div>
-                                        <button
-                                            onClick={() => setGuarantees(guarantees.filter((_, idx) => idx !== i))}
-                                            className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 hover:text-red-600 transition-colors"
-                                        >
-                                            <Trash2 className="w-5 h-5" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
+                            )}
                         </div>
 
                         <button
@@ -2245,134 +2601,214 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                         </div>
 
                         <div className="overflow-y-auto p-6 space-y-6">
-                            <div className="space-y-4">
-                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">Datos del Solicitante</h4>
-                                <div className="space-y-3">
-                                    <input type="text" value={clientName} onChange={e => setClientName(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase" placeholder="Nombre completo *" />
-                                    <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase" placeholder="Domicilio *" />
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <input type="number" inputMode="numeric" value={creditAmount} onChange={e => setCreditAmount(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Monto $" />
-                                        <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={cellphone} onChange={e => setCellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Celular (10 d)" />
+                            {/* SECCIÓN CLIENTE */}
+                            <div className="space-y-6 bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-pink-50/30 p-6 rounded-[2rem] border border-indigo-200/80 shadow-sm animate-in zoom-in-95">
+                                <h3 className="text-sm font-black text-indigo-900 uppercase tracking-wider flex items-center justify-between w-full">
+                                    <span className="flex items-center gap-2">
+                                        <User className="w-4 h-4 text-indigo-600" /> DATOS DEL CLIENTE
+                                    </span>
+                                    {(() => {
+                                        const pct = getClientFormProgress();
+                                        const styles = getProgressStyles(pct);
+                                        return (
+                                            <span className={`flex items-center gap-2 border px-2 py-0.5 rounded-full text-[8.5px] font-black transition-colors ${styles.pill}`}>
+                                                <span className={`w-20 h-1 rounded-full overflow-hidden block ${styles.barBg}`}>
+                                                    <span className={`h-full block transition-all duration-300 ${styles.barFill}`} style={{ width: `${pct}%` }}></span>
+                                                </span>
+                                                {pct}%
+                                            </span>
+                                        );
+                                    })()}
+                                </h3>
+
+                                <div className="space-y-4">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">Datos Generales</h4>
+                                    <div className="space-y-3">
+                                        <input type="text" value={clientName} onChange={e => setClientName(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase" placeholder="Nombre completo" />
+                                        <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase" placeholder="Domicilio" />
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <input type="number" inputMode="numeric" value={creditAmount} onChange={e => setCreditAmount(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Monto $" />
+                                            <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={cellphone} onChange={e => setCellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Celular" />
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            <div className="space-y-4">
-                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-3">Datos del Aval{requiredAvales > 1 ? 'es' : ''}</h4>
-                                {/* AVAL 1 */}
-                                <div className="space-y-3 bg-slate-50 p-4 rounded-3xl border border-slate-100 border-l-8 border-l-blue-100">
-                                    <div className="flex items-center justify-between px-1">
-                                        <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Aval Principal</p>
-                                        <label className="flex items-center gap-2 cursor-pointer group">
-                                            <input
-                                                type="checkbox"
-                                                checked={aval1IsClient}
-                                                onChange={e => {
-                                                    setAval1IsClient(e.target.checked);
-                                                    if (!e.target.checked) setAval1SelectedClient(null);
-                                                }}
-                                                className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
-                                            />
-                                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest group-hover:text-blue-600 transition-colors">¿Es cliente?</span>
-                                        </label>
+                                <div className="space-y-3">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-green-500 pl-3 flex items-center gap-2">
+                                        <Package className="w-4 h-4 text-green-500" /> GARANTIAS DEL CLIENTE ({guarantees.length})
+                                    </h4>
+
+                                    <div className="flex flex-col gap-3">
+                                        <input
+                                            type="text"
+                                            value={newGuarantee}
+                                            onChange={e => setNewGuarantee(e.target.value.toUpperCase())}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleAddGuarantee()}
+                                            className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-green-500 outline-none transition-shadow uppercase text-sm"
+                                            placeholder="Ej: TV Samsung 50 pulgadas"
+                                        />
+                                        <button
+                                            onClick={handleAddGuarantee}
+                                            className="w-full py-3 bg-green-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center justify-center gap-2 hover:bg-green-700 active:scale-95 transition-all"
+                                        >
+                                            <Plus className="w-4 h-4" /> Agregar Artículo
+                                        </button>
                                     </div>
 
-                                    {aval1IsClient && (
-                                        <div className="space-y-2 animate-in fade-in zoom-in-95 duration-200">
-                                            <div className="relative">
-                                                <input
-                                                    type="text"
-                                                    value={aval1Search}
-                                                    onChange={e => setAval1Search(e.target.value)}
-                                                    className="w-full p-4 pl-10 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
-                                                    placeholder="Buscar cliente en este ciclo..."
-                                                />
-                                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                            </div>
-                                            {aval1Search.length > 0 && (
-                                                <div className="max-h-[200px] overflow-y-auto border border-slate-100 rounded-2xl bg-white shadow-xl divide-y divide-slate-50 scrollbar-hide z-[10]">
-                                                    {currentWeekClients
-                                                        .filter(c => c.name.toUpperCase().includes(aval1Search.toUpperCase()))
-                                                        .map(c => (
-                                                            <button
-                                                                key={c.id}
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setAval1SelectedClient(c);
-                                                                    setAvalName(c.name);
-                                                                    setAvalAddress(c.address || '');
-                                                                    setAvalCellphone(c.cellphone || '');
-                                                                    setAval1Search('');
-                                                                }}
-                                                                className="w-full p-4 text-left hover:bg-blue-50 transition-colors flex items-center justify-between group"
-                                                            >
-                                                                <div className="flex flex-col">
-                                                                    <span className="font-black text-slate-800 text-[11px] uppercase">{c.name}</span>
-                                                                    <span className="text-[9px] text-slate-400 font-mono">{c.id}</span>
-                                                                </div>
-                                                                <UserCheck className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition-colors" />
-                                                            </button>
-                                                        ))}
+                                    <div className="space-y-2 mt-2">
+                                        {guarantees.length === 0 ? (
+                                            <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-2 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">
+                                                Sin garantías registradas
+                                            </p>
+                                        ) : (
+                                            guarantees.map((g, i) => (
+                                                <div key={i} className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center animate-in slide-in-from-bottom-1">
+                                                    <span className="text-xs font-black text-slate-700 uppercase truncate">{g}</span>
+                                                    <button
+                                                        onClick={() => setGuarantees(guarantees.filter((_, idx) => idx !== i))}
+                                                        className="p-2 text-red-500 rounded-lg hover:bg-red-55"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+
+                                {supervisor.canEditPhotos && (requireFacade || requireClientPhoto) && (
+                                    <div className="space-y-4">
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">Fotografías del Cliente</h4>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {/* FACHADA CLIENTE */}
+                                            {requireFacade && (
+                                                <div className="space-y-2">
+                                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Fachada</p>
+                                                    <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => {
+                                                        const el = document.getElementById('edit-facade-input');
+                                                        if (el) (el as HTMLInputElement).click();
+                                                    }}>
+                                                        {facadePreview ? <img src={facadePreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><Home className="w-8 h-8 text-indigo-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                        <input id="edit-facade-input" type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) {
+                                                                setFacadeFile(file);
+                                                                setFacadePreview(URL.createObjectURL(file));
+                                                            }
+                                                        }} />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* FOTO CLIENTE */}
+                                            {requireClientPhoto && (
+                                                <div className="space-y-2">
+                                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Foto Personal</p>
+                                                    <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => {
+                                                        const el = document.getElementById('edit-client-input');
+                                                        if (el) (el as HTMLInputElement).click();
+                                                    }}>
+                                                        {clientPhotoPreview ? <img src={clientPhotoPreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><User className="w-8 h-8 text-indigo-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                        <input id="edit-client-input" type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) {
+                                                                setClientPhotoFile(file);
+                                                                setClientPhotoPreview(URL.createObjectURL(file));
+                                                            }
+                                                        }} />
+                                                    </div>
                                                 </div>
                                             )}
                                         </div>
-                                    )}
-                                    <input type="text" value={avalName} onChange={e => setAvalName(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo *" />
-                                    <input type="text" value={avalAddress} onChange={e => setAvalAddress(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo *" />
-                                    <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={avalCellphone} onChange={e => setAvalCellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular (10 dígitos) *" />
-                                </div>
+                                    </div>
+                                )}
 
-                                {/* AVAL 2 */}
-                                {requiredAvales >= 2 && (
-                                    <div className="space-y-3 bg-blue-50/50 p-4 rounded-3xl border border-blue-100 border-l-8 border-l-blue-200 animate-in slide-in-from-top-2">
+                                <div className="space-y-3">
+                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-amber-500 pl-3 flex items-center gap-2">
+                                        <MessageSquare className="w-4 h-4 text-amber-500" /> Comentarios Extras (Opcional)
+                                    </h4>
+                                    <textarea
+                                        value={clientComments}
+                                        onChange={e => setClientComments(e.target.value.toUpperCase())}
+                                        className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-amber-500 outline-none transition-shadow uppercase text-sm min-h-[80px]"
+                                        placeholder="Ej: Trabaja en la zapatería del centro, portón café..."
+                                    />
+                                </div>
+                            </div>
+
+                            {/* SECCIÓN AVAL */}
+                            <div className="space-y-6 bg-gradient-to-br from-blue-50/70 via-sky-50/40 to-indigo-50/30 p-6 rounded-[2rem] border border-blue-200/80 shadow-sm animate-in zoom-in-95">
+                                <h3 className="text-sm font-black text-blue-900 uppercase tracking-wider flex items-center justify-between w-full">
+                                    <span className="flex items-center gap-2">
+                                        <User className="w-4 h-4 text-blue-600" /> DATOS DEL AVAL
+                                    </span>
+                                    {(() => {
+                                        const pct = getAvalFormProgress();
+                                        const styles = getProgressStyles(pct);
+                                        return (
+                                            <span className={`flex items-center gap-2 border px-2 py-0.5 rounded-full text-[8.5px] font-black transition-colors ${styles.pill}`}>
+                                                <span className={`w-20 h-1 rounded-full overflow-hidden block ${styles.barBg}`}>
+                                                    <span className={`h-full block transition-all duration-300 ${styles.barFill}`} style={{ width: `${pct}%` }}></span>
+                                                </span>
+                                                {pct}%
+                                            </span>
+                                        );
+                                    })()}
+                                </h3>
+
+                                <div className="space-y-4">
+                                    {/* AVAL 1 */}
+                                    <div className="space-y-3 bg-white p-5 rounded-3xl border border-blue-100">
                                         <div className="flex items-center justify-between px-1">
-                                            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Segundo Aval (Requerido por monto)</p>
+                                            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Aval Principal</p>
                                             <label className="flex items-center gap-2 cursor-pointer group">
                                                 <input
                                                     type="checkbox"
-                                                    checked={aval2IsClient}
+                                                    checked={aval1IsClient}
                                                     onChange={e => {
-                                                        setAval2IsClient(e.target.checked);
-                                                        if (!e.target.checked) setAval2SelectedClient(null);
+                                                        setAval1IsClient(e.target.checked);
+                                                        if (!e.target.checked) setAval1SelectedClient(null);
                                                     }}
-                                                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-blue-200"
+                                                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300"
                                                 />
                                                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest group-hover:text-blue-600 transition-colors">¿Es cliente?</span>
                                             </label>
                                         </div>
 
-                                        {aval2IsClient && (
+                                        {aval1IsClient && (
                                             <div className="space-y-2 animate-in fade-in zoom-in-95 duration-200">
                                                 <div className="relative">
                                                     <input
                                                         type="text"
-                                                        value={aval2Search}
-                                                        onChange={e => setAval2Search(e.target.value)}
-                                                        className="w-full p-4 pl-10 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
-                                                        placeholder="Buscar cliente en este ciclo..."
+                                                        value={aval1Search}
+                                                        onChange={e => setAval1Search(e.target.value)}
+                                                        className="w-full p-4 pl-10 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-slate-50 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        placeholder="Buscar cliente o aval..."
                                                     />
                                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                                                 </div>
-                                                {aval2Search.length > 0 && (
-                                                    <div className="max-h-[200px] overflow-y-auto border border-slate-100 rounded-2xl bg-white shadow-xl divide-y divide-slate-50 scrollbar-hide z-[10]">
-                                                        {currentWeekClients
-                                                            .filter(c => c.name.toUpperCase().includes(aval2Search.toUpperCase()))
-                                                            .map(c => (
+                                                {aval1Search.length > 0 && (
+                                                    <div className="max-h-[150px] overflow-y-auto border border-slate-100 rounded-2xl bg-white shadow-xl divide-y divide-slate-50 scrollbar-hide z-[10]">
+                                                        {financieraGuarantorCandidates
+                                                            .filter(c => c.name.toUpperCase().includes(aval1Search.toUpperCase()))
+                                                            .map((c, idx) => (
                                                                 <button
-                                                                    key={c.id}
+                                                                    key={idx}
                                                                     type="button"
                                                                     onClick={() => {
-                                                                        setAval2SelectedClient(c);
-                                                                        setAval2Name(c.name);
-                                                                        setAval2Address(c.address || '');
-                                                                        setAval2Cellphone(c.cellphone || '');
-                                                                        setAval2Search('');
+                                                                        setAval1SelectedClient({ id: 'AUTO', name: c.name, address: c.address, cellphone: c.cellphone, facadeUrl: c.facadeUrl, clientPhotoUrl: c.photoUrl } as any);
+                                                                        setAvalName(c.name);
+                                                                        setAvalAddress(c.address || '');
+                                                                        setAvalCellphone(c.cellphone || '');
+                                                                        if (c.facadeUrl) setAvalFacadePreview(c.facadeUrl);
+                                                                        if (c.photoUrl) setAvalPhotoPreview(c.photoUrl);
+                                                                        setAval1Search('');
                                                                     }}
-                                                                    className="w-full p-4 text-left hover:bg-blue-50 transition-colors flex items-center justify-between group"
+                                                                    className="w-full p-3 text-left hover:bg-blue-50 transition-colors flex items-center justify-between group"
                                                                 >
                                                                     <div className="flex flex-col">
-                                                                        <span className="font-black text-slate-800 text-[11px] uppercase">{c.name}</span>
-                                                                        <span className="text-[9px] text-slate-400 font-mono">{c.id}</span>
+                                                                        <span className="font-black text-slate-800 text-[10px] uppercase">{c.name}</span>
+                                                                        <span className="text-[8px] text-slate-400 font-mono">{c.cellphone}</span>
                                                                     </div>
                                                                     <UserCheck className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition-colors" />
                                                                 </button>
@@ -2381,179 +2817,228 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                 )}
                                             </div>
                                         )}
+                                        <input type="text" value={avalName} onChange={e => setAvalName(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                        <input type="text" value={avalAddress} onChange={e => setAvalAddress(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
+                                        <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={avalCellphone} onChange={e => setAvalCellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
 
-                                        <input type="text" value={aval2Name} onChange={e => { setAval2Name(e.target.value.toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo *" />
-                                        <input type="text" value={aval2Address} onChange={e => { setAval2Address(e.target.value.toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo *" />
-                                        <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={aval2Cellphone} onChange={e => { setAval2Cellphone(e.target.value.replace(/\D/g, '')); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular (10 dígitos) *" />
-                                    </div>
-                                )}
-
-                                {/* AVAL 3 */}
-                                {requiredAvales >= 3 && (
-                                    <div className="space-y-3 bg-blue-50/50 p-4 rounded-3xl border border-blue-100 animate-in slide-in-from-top-2">
-                                        <div className="flex items-center justify-between px-1">
-                                            <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Tercer Aval (Requerido por monto)</p>
+                                        {/* Garantías del Aval 1 */}
+                                        <div className="space-y-3 pt-2 border-t border-slate-100">
+                                            <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Garantías del Aval</p>
+                                            <div className="flex flex-col gap-3">
+                                                <input
+                                                    type="text"
+                                                    value={newAval1Guarantee}
+                                                    onChange={e => setNewAval1Guarantee(e.target.value.toUpperCase())}
+                                                    onKeyDown={(e) => e.key === 'Enter' && handleAddAval1Guarantee()}
+                                                    className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow uppercase text-sm"
+                                                    placeholder="Ej: Moto Italika 125cc"
+                                                />
+                                                <button
+                                                    onClick={handleAddAval1Guarantee}
+                                                    className="w-full py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all"
+                                                >
+                                                    <Plus className="w-4 h-4" /> Agregar Artículo
+                                                </button>
+                                            </div>
+                                            <div className="space-y-2 mt-2">
+                                                {aval1Guarantees.length === 0 ? (
+                                                    <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-2 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">Sin garantías registradas</p>
+                                                ) : (
+                                                    aval1Guarantees.map((g, i) => (
+                                                        <div key={i} className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                                                            <span className="text-xs font-black text-slate-700 uppercase truncate">{g}</span>
+                                                            <button onClick={() => setAval1Guarantees(aval1Guarantees.filter((_, idx) => idx !== i))} className="p-2 text-red-500 rounded-lg hover:bg-red-55"><Trash2 className="w-4 h-4" /></button>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
                                         </div>
-                                        <input type="text" value={aval3Name} onChange={e => setAval3Name(e.target.value.toUpperCase())} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo *" />
-                                        <input type="text" value={aval3Address} onChange={e => setAval3Address(e.target.value.toUpperCase())} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo *" />
-                                        <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={aval3Cellphone} onChange={e => setAval3Cellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular (10 dígitos) *" />
                                     </div>
-                                )}
-                            </div>
 
-                            <div className="space-y-3 bg-slate-50 p-4 rounded-3xl border border-slate-100">
-                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-amber-500 pl-3 flex items-center gap-2">
-                                    <MessageSquare className="w-4 h-4" /> Comentarios Extras (Opcional)
-                                </h4>
-                                <textarea
-                                    value={clientComments}
-                                    onChange={e => setClientComments(e.target.value.toUpperCase())}
-                                    className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-amber-500 outline-none transition-shadow uppercase text-sm min-h-[100px]"
-                                    placeholder="Ej: Trabaja en la zapatería del centro, portón café..."
-                                />
-                            </div>
+                                    {/* AVAL 2 */}
+                                    {requiredAvales >= 2 && (
+                                        <div className="space-y-3 bg-white p-5 rounded-3xl border border-blue-100 animate-in slide-in-from-top-2">
+                                            <div className="flex items-center justify-between px-1">
+                                                <p className="text-[9px] font-black text-blue-600 uppercase tracking-widest">Segundo Aval (Requerido)</p>
+                                                <label className="flex items-center gap-2 cursor-pointer group">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={aval2IsClient}
+                                                        onChange={e => {
+                                                            setAval2IsClient(e.target.checked);
+                                                            if (!e.target.checked) setAval2SelectedClient(null);
+                                                        }}
+                                                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-blue-200"
+                                                    />
+                                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest group-hover:text-blue-600 transition-colors">¿Es cliente?</span>
+                                                </label>
+                                            </div>
 
-                            <div className="space-y-3 bg-slate-50 p-4 rounded-3xl border border-slate-100">
-                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-green-500 pl-3 flex items-center gap-2">
-                                    <Package className="w-4 h-4" /> GARANTIAS DEL CLIENTE ({guarantees.length})
-                                </h4>
+                                            {aval2IsClient && (
+                                                <div className="space-y-2 animate-in fade-in zoom-in-95 duration-200">
+                                                    <div className="relative">
+                                                        <input
+                                                            type="text"
+                                                            value={aval2Search}
+                                                            onChange={e => setAval2Search(e.target.value)}
+                                                            className="w-full p-4 pl-10 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-slate-50 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
+                                                            placeholder="Buscar cliente o aval..."
+                                                        />
+                                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                                    </div>
+                                                    {aval2Search.length > 0 && (
+                                                        <div className="max-h-[150px] overflow-y-auto border border-slate-100 rounded-2xl bg-white shadow-xl divide-y divide-slate-50 scrollbar-hide z-[10]">
+                                                            {financieraGuarantorCandidates
+                                                                .filter(c => c.name.toUpperCase().includes(aval2Search.toUpperCase()))
+                                                                .map((c, idx) => (
+                                                                    <button
+                                                                        key={idx}
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setAval2SelectedClient({ id: 'AUTO', name: c.name, address: c.address, cellphone: c.cellphone, facadeUrl: c.facadeUrl, clientPhotoUrl: c.photoUrl } as any);
+                                                                            setAval2Name(c.name);
+                                                                            setAval2Address(c.address || '');
+                                                                            setAval2Cellphone(c.cellphone || '');
+                                                                            setAval2Search('');
+                                                                        }}
+                                                                        className="w-full p-3 text-left hover:bg-blue-50 transition-colors flex items-center justify-between group"
+                                                                    >
+                                                                        <div className="flex flex-col">
+                                                                            <span className="font-black text-slate-800 text-[10px] uppercase">{c.name}</span>
+                                                                            <span className="text-[8px] text-slate-400 font-mono">{c.cellphone}</span>
+                                                                        </div>
+                                                                        <UserCheck className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition-colors" />
+                                                                    </button>
+                                                                ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
 
-                                <div className="flex flex-col gap-3">
-                                    <input
-                                        type="text"
-                                        value={newGuarantee}
-                                        onChange={e => setNewGuarantee(e.target.value.toUpperCase())}
-                                        onKeyDown={(e) => e.key === 'Enter' && handleAddGuarantee()}
-                                        className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-green-500 outline-none transition-shadow uppercase text-sm"
-                                        placeholder="Ej: TV Samsung 50 pulgadas"
-                                    />
-                                    <button
-                                        onClick={handleAddGuarantee}
-                                        className="w-full py-4 bg-green-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-green-100 flex items-center justify-center gap-2 hover:bg-green-700 active:scale-95 transition-all"
-                                    >
-                                        <Plus className="w-5 h-5" /> Agregar Artículo
-                                    </button>
-                                </div>
+                                            <input type="text" value={aval2Name} onChange={e => { setAval2Name(e.target.value.toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                            <input type="text" value={aval2Address} onChange={e => { setAval2Address(e.target.value.toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
+                                            <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={aval2Cellphone} onChange={e => { setAval2Cellphone(e.target.value.replace(/\D/g, '')); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
 
-                                <div className="space-y-2 mt-2">
-                                    {guarantees.length === 0 && (
-                                        <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-4 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">
-                                            Sin garantías registradas
-                                        </p>
+                                            {/* Garantías del Aval 2 */}
+                                            <div className="space-y-3 pt-2 border-t border-slate-100">
+                                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Garantías del Aval 2</p>
+                                                <div className="flex flex-col gap-3">
+                                                    <input
+                                                        type="text"
+                                                        value={newAval2Guarantee}
+                                                        onChange={e => setNewAval2Guarantee(e.target.value.toUpperCase())}
+                                                        onKeyDown={(e) => e.key === 'Enter' && handleAddAval2Guarantee()}
+                                                        className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow uppercase text-sm"
+                                                        placeholder="Garantía de Aval 2"
+                                                    />
+                                                    <button onClick={handleAddAval2Guarantee} className="w-full py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all">
+                                                        <Plus className="w-4 h-4" /> Agregar Artículo
+                                                    </button>
+                                                </div>
+                                                <div className="space-y-2 mt-2">
+                                                    {aval2Guarantees.length === 0 ? (
+                                                        <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-2 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">Sin garantías registradas</p>
+                                                    ) : (
+                                                        aval2Guarantees.map((g, i) => (
+                                                            <div key={i} className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{g}</span>
+                                                                <button onClick={() => setAval2Guarantees(aval2Guarantees.filter((_, idx) => idx !== i))} className="p-2 text-red-500 rounded-lg hover:bg-red-55"><Trash2 className="w-4 h-4" /></button>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
                                     )}
-                                    {guarantees.map((g, i) => (
-                                        <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center animate-in slide-in-from-bottom-1">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
-                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{g}</span>
+
+                                    {/* AVAL 3 */}
+                                    {requiredAvales >= 3 && (
+                                        <div className="space-y-3 bg-white p-5 rounded-3xl border border-blue-100 animate-in slide-in-from-top-2">
+                                            <p className="text-[10px] font-black text-blue-600 uppercase tracking-widest">Tercer Aval (Requerido)</p>
+                                            <input type="text" value={aval3Name} onChange={e => setAval3Name(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                            <input type="text" value={aval3Address} onChange={e => setAval3Address(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
+                                            <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={aval3Cellphone} onChange={e => setAval3Cellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
+
+                                            {/* Garantías del Aval 3 */}
+                                            <div className="space-y-3 pt-2 border-t border-slate-100">
+                                                <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Garantías del Aval 3</p>
+                                                <div className="flex flex-col gap-3">
+                                                    <input
+                                                        type="text"
+                                                        value={newAval3Guarantee}
+                                                        onChange={e => setNewAval3Guarantee(e.target.value.toUpperCase())}
+                                                        onKeyDown={(e) => e.key === 'Enter' && handleAddAval3Guarantee()}
+                                                        className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow uppercase text-sm"
+                                                        placeholder="Garantía de Aval 3"
+                                                    />
+                                                    <button onClick={handleAddAval3Guarantee} className="w-full py-3 bg-blue-600 text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-md flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all">
+                                                        <Plus className="w-4 h-4" /> Agregar Artículo
+                                                    </button>
+                                                </div>
+                                                <div className="space-y-2 mt-2">
+                                                    {aval3Guarantees.length === 0 ? (
+                                                        <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-2 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">Sin garantías registradas</p>
+                                                    ) : (
+                                                        aval3Guarantees.map((g, i) => (
+                                                            <div key={i} className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{g}</span>
+                                                                <button onClick={() => setAval3Guarantees(aval3Guarantees.filter((_, idx) => idx !== i))} className="p-2 text-red-500 rounded-lg hover:bg-red-55"><Trash2 className="w-4 h-4" /></button>
+                                                            </div>
+                                                        ))
+                                                    )}
+                                                </div>
                                             </div>
-                                            <button
-                                                onClick={() => setGuarantees(guarantees.filter((_, idx) => idx !== i))}
-                                                className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 hover:text-red-600 transition-colors"
-                                            >
-                                                <Trash2 className="w-5 h-5" />
-                                            </button>
                                         </div>
-                                    ))}
+                                    )}
                                 </div>
-                            </div>
 
-                            {supervisor.canEditPhotos && (
-                                <div className="space-y-4 bg-slate-50 p-4 rounded-3xl border border-slate-100">
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-emerald-500 pl-3 flex items-center gap-2">
-                                        <Camera className="w-4 h-4" /> Fotografías del Expediente
-                                    </h4>
-
-                                    <div className="grid grid-cols-1 gap-4">
-                                        {/* FACHADA CLIENTE */}
-                                        {requireFacade && (
-                                            <div className="space-y-2">
-                                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Fachada del Cliente</p>
-                                                <div className="flex gap-3 items-center">
-                                                    <div className="w-24 h-24 rounded-2xl bg-white border border-slate-200 overflow-hidden flex-shrink-0 shadow-sm">
-                                                        {facadePreview ? (
-                                                            <img src={facadePreview} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-slate-300"><Home className="w-8 h-8" /></div>
-                                                        )}
+                                {supervisor.canEditPhotos && (requireGuarantorFacade || requireGuarantorPhoto) && (
+                                    <div className="space-y-4 bg-white p-5 rounded-3xl border border-blue-100">
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-emerald-500 pl-3">Fotografías del Aval</h4>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {/* FACHADA AVAL */}
+                                            {requireGuarantorFacade && (
+                                                <div className="space-y-2">
+                                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Fachada</p>
+                                                    <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => {
+                                                        const el = document.getElementById('edit-aval-facade-input');
+                                                        if (el) (el as HTMLInputElement).click();
+                                                    }}>
+                                                        {avalFacadePreview ? <img src={avalFacadePreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><Home className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                        <input id="edit-aval-facade-input" type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) {
+                                                                setAvalFacadeFile(file);
+                                                                setAvalFacadePreview(URL.createObjectURL(file));
+                                                            }
+                                                        }} />
                                                     </div>
-                                                    <label className="flex-1 cursor-pointer">
-                                                        <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50 transition-all group">
-                                                            <Camera className="w-6 h-6 text-slate-400 group-hover:text-emerald-600 mb-1" />
-                                                            <span className="text-[10px] font-black text-slate-500 group-hover:text-emerald-700 uppercase">{facadePreview ? 'Cambiar Foto' : 'Tomar Foto'}</span>
-                                                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
-                                                                const file = e.target.files?.[0];
-                                                                if (file) {
-                                                                    setFacadeFile(file);
-                                                                    setFacadePreview(URL.createObjectURL(file));
-                                                                }
-                                                            }} />
-                                                        </div>
-                                                    </label>
                                                 </div>
-                                            </div>
-                                        )}
+                                            )}
 
-                                        {/* FOTO CLIENTE */}
-                                        {requireClientPhoto && (
-                                            <div className="space-y-2">
-                                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Foto del Cliente</p>
-                                                <div className="flex gap-3 items-center">
-                                                    <div className="w-24 h-24 rounded-2xl bg-white border border-slate-200 overflow-hidden flex-shrink-0 shadow-sm">
-                                                        {clientPhotoPreview ? (
-                                                            <img src={clientPhotoPreview} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-slate-300"><User className="w-8 h-8" /></div>
-                                                        )}
+                                            {/* FOTO AVAL */}
+                                            {requireGuarantorPhoto && (
+                                                <div className="space-y-2">
+                                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Foto Personal</p>
+                                                    <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => {
+                                                        const el = document.getElementById('edit-aval-person-input');
+                                                        if (el) (el as HTMLInputElement).click();
+                                                    }}>
+                                                        {avalPhotoPreview ? <img src={avalPhotoPreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><User className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                        <input id="edit-aval-person-input" type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) {
+                                                                setAvalPhotoFile(file);
+                                                                setAvalPhotoPreview(URL.createObjectURL(file));
+                                                            }
+                                                        }} />
                                                     </div>
-                                                    <label className="flex-1 cursor-pointer">
-                                                        <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50 transition-all group">
-                                                            <Camera className="w-6 h-6 text-slate-400 group-hover:text-emerald-600 mb-1" />
-                                                            <span className="text-[10px] font-black text-slate-500 group-hover:text-emerald-700 uppercase">{clientPhotoPreview ? 'Cambiar Foto' : 'Tomar Foto'}</span>
-                                                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
-                                                                const file = e.target.files?.[0];
-                                                                if (file) {
-                                                                    setClientPhotoFile(file);
-                                                                    setClientPhotoPreview(URL.createObjectURL(file));
-                                                                }
-                                                            }} />
-                                                        </div>
-                                                    </label>
                                                 </div>
-                                            </div>
-                                        )}
-
-                                        {/* FACHADA AVAL */}
-                                        {requireGuarantorFacade && (
-                                            <div className="space-y-2">
-                                                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Fachada del Aval</p>
-                                                <div className="flex gap-3 items-center">
-                                                    <div className="w-24 h-24 rounded-2xl bg-white border border-slate-200 overflow-hidden flex-shrink-0 shadow-sm">
-                                                        {avalFacadePreview ? (
-                                                            <img src={avalFacadePreview} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                                        ) : (
-                                                            <div className="w-full h-full flex items-center justify-center text-slate-300"><Home className="w-8 h-8 text-blue-300" /></div>
-                                                        )}
-                                                    </div>
-                                                    <label className="flex-1 cursor-pointer">
-                                                        <div className="flex flex-col items-center justify-center p-4 border-2 border-dashed border-slate-300 rounded-2xl hover:border-emerald-500 hover:bg-emerald-50 transition-all group">
-                                                            <Camera className="w-6 h-6 text-slate-400 group-hover:text-emerald-600 mb-1" />
-                                                            <span className="text-[10px] font-black text-slate-500 group-hover:text-emerald-700 uppercase">{avalFacadePreview ? 'Cambiar Foto' : 'Tomar Foto'}</span>
-                                                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => {
-                                                                const file = e.target.files?.[0];
-                                                                if (file) {
-                                                                    setAvalFacadeFile(file);
-                                                                    setAvalFacadePreview(URL.createObjectURL(file));
-                                                                }
-                                                            }} />
-                                                        </div>
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        )}
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
-                            )}
+                                )}
+                            </div>
 
                             <button
                                 disabled={isUploading}
@@ -2615,117 +3100,178 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                             </div>
 
                             <div className="overflow-y-auto flex-1 p-4 space-y-4">
-                                {/* Quick Data Grid */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex flex-col">
-                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1"><DollarSign className="w-2.5 h-2.5" /> Crédito</span>
-                                        <span className="text-sm font-black text-slate-900">${selectedClientHistory.creditAmount}</span>
-                                    </div>
-                                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex flex-col">
-                                        <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1"><Smartphone className="w-2.5 h-2.5" /> Celular</span>
-                                        <span className="text-sm font-black text-slate-900 truncate">{selectedClientHistory.cellphone}</span>
-                                    </div>
-                                </div>
+                                {/* SECCIÓN CLIENTE */}
+                                <div className="space-y-4 bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-pink-50/30 p-5 rounded-[2rem] border border-indigo-200/80 shadow-sm">
+                                    <h3 className="text-xs font-black text-indigo-900 uppercase tracking-wider flex items-center justify-between w-full border-b border-indigo-100 pb-2">
+                                        <span className="flex items-center gap-1.5">
+                                            <User className="w-4 h-4 text-indigo-600" /> DATOS DEL CLIENTE
+                                        </span>
+                                        {(() => {
+                                            const pct = getClientDetailProgress(selectedClientHistory);
+                                            const styles = getProgressStyles(pct);
+                                            return (
+                                                <span className={`flex items-center gap-2 border px-2 py-0.5 rounded-full text-[8px] font-black transition-colors ${styles.pill}`}>
+                                                    <span className={`w-20 h-1 rounded-full overflow-hidden block ${styles.barBg}`}>
+                                                        <span className={`h-full block transition-all duration-300 ${styles.barFill}`} style={{ width: `${pct}%` }}></span>
+                                                    </span>
+                                                    {pct}%
+                                                </span>
+                                            );
+                                        })()}
+                                    </h3>
 
-                                {/* Domicilio Section */}
-                                <div className="space-y-1.5">
-                                    <div className="flex items-center justify-between px-1">
-                                        <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><MapPin className="w-3 h-3 text-indigo-500" /> Domicilio</p>
-                                        {selectedClientHistory.latitude && (
-                                            <a
-                                                href={`https://www.google.com/maps/search/?api=1&query=${selectedClientHistory.latitude},${selectedClientHistory.longitude}`}
-                                                target="_blank"
-                                                className="text-[9px] font-black text-indigo-600 uppercase hover:underline"
+                                    {/* Quick Data Grid */}
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="p-3 bg-white/80 backdrop-blur-sm rounded-xl border border-indigo-100 flex flex-col">
+                                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1"><DollarSign className="w-2.5 h-2.5 text-indigo-500" /> Crédito</span>
+                                            <span className="text-sm font-black text-slate-900">${selectedClientHistory.creditAmount}</span>
+                                        </div>
+                                        <div className="p-3 bg-white/80 backdrop-blur-sm rounded-xl border border-indigo-100 flex flex-col">
+                                            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1"><Smartphone className="w-2.5 h-2.5 text-indigo-500" /> Celular</span>
+                                            {selectedClientHistory.cellphone ? (
+                                                <a href={`tel:${selectedClientHistory.cellphone}`} className="text-sm font-black text-indigo-600 hover:underline truncate">
+                                                    {selectedClientHistory.cellphone}
+                                                </a>
+                                            ) : (
+                                                <span className="text-sm font-black text-slate-900 truncate">N/A</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Domicilio Section */}
+                                    <div className="space-y-1">
+                                        <div className="flex items-center justify-between px-1">
+                                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5"><MapPin className="w-2.5 h-2.5 text-indigo-500" /> Domicilio</p>
+                                            {selectedClientHistory.latitude && (
+                                                <a
+                                                    href={`https://www.google.com/maps/search/?api=1&query=${selectedClientHistory.latitude},${selectedClientHistory.longitude}`}
+                                                    target="_blank"
+                                                    className="text-[8px] font-black text-indigo-600 uppercase hover:underline"
+                                                >
+                                                    Ver en GPS
+                                                </a>
+                                            )}
+                                        </div>
+                                        <div className="p-3 bg-white/80 backdrop-blur-sm border border-indigo-100 rounded-xl">
+                                            <p className="text-[11px] font-bold text-slate-700 uppercase leading-relaxed">
+                                                {selectedClientHistory.address || 'SIN REGISTRO'}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    {/* Inventory Section */}
+                                    <div className="space-y-1">
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 px-1"><Package className="w-2.5 h-2.5 text-green-500" /> Garantías ({selectedClientHistory.guarantees?.length || 0})</p>
+                                        <div className="flex flex-wrap gap-1.5">
+                                            {selectedClientHistory.guarantees?.length === 0 ? (
+                                                <span className="text-[9px] text-slate-400 italic px-1">Sin garantías</span>
+                                            ) : (
+                                                selectedClientHistory.guarantees?.map((g, gi) => (
+                                                    <span key={gi} className="px-2 py-0.5 bg-emerald-50 border border-emerald-100 text-[9px] font-bold text-emerald-700 rounded-md uppercase tracking-tight">
+                                                        {g.description}
+                                                    </span>
+                                                ))
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Media Section: Photos in 2 columns */}
+                                    {(requireFacade || requireClientPhoto) && (
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {requireFacade && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex justify-between items-center px-1">
+                                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Fachada</p>
+                                                        {supervisor.canEditPhotos && (
+                                                            <label className="cursor-pointer text-[8px] font-black text-indigo-600 uppercase">
+                                                                Editar
+                                                                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpdatePhoto(selectedClientHistory.id, 'facadeUrl', e.target.files[0])} />
+                                                            </label>
+                                                        )}
+                                                    </div>
+                                                    <div
+                                                        className="aspect-video rounded-xl overflow-hidden border border-indigo-100 bg-white/80 backdrop-blur-sm cursor-pointer relative"
+                                                        onClick={() => setFullPhotoUrl(selectedClientHistory.facadeUrl || null)}
+                                                    >
+                                                        {isUploading && <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center"><Loader2 className="w-4 h-4 animate-spin text-indigo-600" /></div>}
+                                                        {selectedClientHistory.facadeUrl ? (
+                                                            <CachedImage src={selectedClientHistory.facadeUrl} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center text-slate-300"><Home className="w-6 h-6" /></div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {requireClientPhoto && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex justify-between items-center px-1">
+                                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Cliente</p>
+                                                        {supervisor.canEditPhotos && (
+                                                            <label className="cursor-pointer text-[8px] font-black text-indigo-600 uppercase">
+                                                                Editar
+                                                                <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpdatePhoto(selectedClientHistory.id, 'clientPhotoUrl', e.target.files[0])} />
+                                                            </label>
+                                                        )}
+                                                    </div>
+                                                    <div
+                                                        className="aspect-video rounded-xl overflow-hidden border border-indigo-100 bg-white/80 backdrop-blur-sm cursor-pointer relative"
+                                                        onClick={() => setFullPhotoUrl(selectedClientHistory.clientPhotoUrl || null)}
+                                                    >
+                                                        {isUploading && <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center"><Loader2 className="w-4 h-4 animate-spin text-indigo-600" /></div>}
+                                                        {selectedClientHistory.clientPhotoUrl ? (
+                                                            <CachedImage src={selectedClientHistory.clientPhotoUrl} className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center text-slate-300"><User className="w-6 h-6" /></div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Comments Display & Action */}
+                                    <div className="space-y-2 pt-2 border-t border-indigo-100/40">
+                                        <div className="flex justify-between items-center px-1">
+                                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><MessageSquare className="w-2.5 h-2.5 text-amber-500" /> Comentarios Extras</p>
+                                            <button
+                                                onClick={() => { setClientComments(selectedClientHistory.comments || ''); setShowCommentsModal(selectedClientHistory); }}
+                                                className="text-[8px] font-black text-indigo-600 uppercase hover:underline"
                                             >
-                                                Ver en GPS
-                                            </a>
+                                                Editar
+                                            </button>
+                                        </div>
+                                        {selectedClientHistory.comments ? (
+                                            <div className="p-3 bg-amber-50/50 rounded-xl border border-dashed border-amber-200">
+                                                <p className="text-[10px] font-bold text-amber-900 uppercase leading-relaxed">
+                                                    "{selectedClientHistory.comments}"
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <p className="text-[9px] text-slate-400 italic px-1">Sin comentarios</p>
                                         )}
                                     </div>
-                                    <div className="p-3 bg-white border border-slate-200 rounded-xl">
-                                        <p className="text-[11px] font-bold text-slate-700 uppercase leading-relaxed">
-                                            {selectedClientHistory.address || 'SIN REGISTRO'}
-                                        </p>
-                                    </div>
                                 </div>
 
-                                {/* Media Section: Photos */}
-                                <div className="grid grid-cols-2 gap-3">
-                                    {requireFacade && (
-                                        <div className="space-y-1.5">
-                                            <div className="flex justify-between items-center px-1">
-                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Fachada</p>
-                                                {supervisor.canEditPhotos && (
-                                                    <label className="cursor-pointer text-[8px] font-black text-indigo-600 uppercase">
-                                                        Editar
-                                                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpdatePhoto(selectedClientHistory.id, 'facadeUrl', e.target.files[0])} />
-                                                    </label>
-                                                )}
-                                            </div>
-                                            <div
-                                                className="aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer relative"
-                                                onClick={() => setFullPhotoUrl(selectedClientHistory.facadeUrl || null)}
-                                            >
-                                                {isUploading && <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center"><Loader2 className="w-4 h-4 animate-spin text-indigo-600" /></div>}
-                                                <CachedImage src={selectedClientHistory.facadeUrl || ''} className="w-full h-full object-cover" />
-                                            </div>
-                                        </div>
-                                    )}
-                                    {requireClientPhoto && (
-                                        <div className="space-y-1.5">
-                                            <div className="flex justify-between items-center px-1">
-                                                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cliente</p>
-                                                {supervisor.canEditPhotos && (
-                                                    <label className="cursor-pointer text-[8px] font-black text-indigo-600 uppercase">
-                                                        Editar
-                                                        <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpdatePhoto(selectedClientHistory.id, 'clientPhotoUrl', e.target.files[0])} />
-                                                    </label>
-                                                )}
-                                            </div>
-                                            <div
-                                                className="aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-50 cursor-pointer relative"
-                                                onClick={() => setFullPhotoUrl(selectedClientHistory.clientPhotoUrl || null)}
-                                            >
-                                                {isUploading && <div className="absolute inset-0 bg-white/60 z-10 flex items-center justify-center"><Loader2 className="w-4 h-4 animate-spin text-indigo-600" /></div>}
-                                                <CachedImage src={selectedClientHistory.clientPhotoUrl || ''} className="w-full h-full object-cover" />
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                {/* SECCIÓN AVAL */}
+                                <div className="space-y-4 bg-gradient-to-br from-blue-50/70 via-sky-50/40 to-indigo-50/30 p-5 rounded-[2rem] border border-blue-200/80 shadow-sm">
+                                    <h3 className="text-xs font-black text-blue-900 uppercase tracking-wider flex items-center justify-between w-full border-b border-blue-100 pb-2">
+                                        <span className="flex items-center gap-1.5">
+                                            <Users className="w-4 h-4 text-blue-600" /> DATOS DEL AVAL
+                                        </span>
+                                        {(() => {
+                                            const pct = getAvalDetailProgress(selectedClientHistory);
+                                            const styles = getProgressStyles(pct);
+                                            return (
+                                                <span className={`flex items-center gap-2 border px-2 py-0.5 rounded-full text-[8px] font-black transition-colors ${styles.pill}`}>
+                                                    <span className={`w-20 h-1 rounded-full overflow-hidden block ${styles.barBg}`}>
+                                                        <span className={`h-full block transition-all duration-300 ${styles.barFill}`} style={{ width: `${pct}%` }}></span>
+                                                    </span>
+                                                    {pct}%
+                                                </span>
+                                            );
+                                        })()}
+                                    </h3>
 
-                                {/* Feedback Actions */}
-                                <div className="flex gap-2">
-                                    <button
-                                        onClick={() => { setClientComments(selectedClientHistory.comments || ''); setShowCommentsModal(selectedClientHistory); }}
-                                        className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-amber-50 border border-amber-200 text-amber-700 rounded-xl text-[10px] font-black uppercase tracking-widest active:scale-95 transition-transform"
-                                    >
-                                        <MessageSquare className="w-3.5 h-3.5" /> {selectedClientHistory.comments ? 'Editar Comentarios' : 'Añadir Comentarios'}
-                                    </button>
-                                </div>
-
-                                {/* Comments Display */}
-                                {selectedClientHistory.comments && (
-                                    <div className="p-3 bg-amber-50/50 rounded-xl border border-dashed border-amber-200">
-                                        <p className="text-[10px] font-bold text-amber-900 uppercase leading-relaxed">
-                                            "{selectedClientHistory.comments}"
-                                        </p>
-                                    </div>
-                                )}
-
-                                {/* Inventory Section */}
-                                <div className="space-y-2">
-                                    <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 px-1"><Package className="w-3 h-3 text-emerald-500" /> Garantías ({selectedClientHistory.guarantees?.length || 0})</h4>
-                                    <div className="flex flex-wrap gap-1.5">
-                                        {selectedClientHistory.guarantees?.map((g, gi) => (
-                                            <span key={gi} className="px-2 py-0.5 bg-emerald-50 border border-emerald-100 text-[9px] font-bold text-emerald-700 rounded-md uppercase tracking-tight">
-                                                {g.description}
-                                            </span>
-                                        ))}
-                                    </div>
-                                </div>
-
-                                {/* Avales List Section */}
-                                <div className="space-y-3">
-                                    <h4 className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 px-1"><Users className="w-3 h-3 text-blue-500" /> Información de Avales</h4>
                                     <div className="space-y-3">
                                         {(selectedClientHistory.avales && selectedClientHistory.avales.length > 0
                                             ? selectedClientHistory.avales
@@ -2734,18 +3280,25 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                 address: selectedClientHistory.avalAddress,
                                                 cellphone: selectedClientHistory.avalCellphone,
                                                 facadeUrl: selectedClientHistory.avalFacadeUrl,
+                                                photoUrl: selectedClientHistory.avalPhotoUrl,
                                                 latitude: selectedClientHistory.avalLatitude,
                                                 longitude: selectedClientHistory.avalLongitude,
                                                 visitTimestamp: selectedClientHistory.avalVisitTimestamp,
                                                 guarantees: []
                                             }]
                                         ).map((aval, idx) => (
-                                            <div key={idx} className="p-3 bg-white border border-slate-200 rounded-xl space-y-3">
-                                                <div className="flex justify-between items-start">
+                                            <div key={idx} className="p-4 bg-white/85 backdrop-blur-sm border border-blue-100 rounded-xl space-y-4 shadow-sm">
+                                                <div className="flex justify-between items-start border-b border-blue-100 pb-2">
                                                     <div className="min-w-0 pr-2">
                                                         <p className="text-[11px] font-black text-slate-900 uppercase truncate mb-0.5">{aval.name || 'NO REGISTRADO'}</p>
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded uppercase">{aval.cellphone || 'S/N'}</span>
+                                                            {aval.cellphone ? (
+                                                                <a href={`tel:${aval.cellphone}`} className="text-[9px] font-black text-blue-600 bg-blue-50 hover:bg-blue-100 px-1.5 py-0.5 rounded uppercase transition-colors">
+                                                                    {aval.cellphone}
+                                                                </a>
+                                                            ) : (
+                                                                <span className="text-[9px] font-bold text-slate-400 bg-slate-50 px-1.5 py-0.5 rounded uppercase">S/N</span>
+                                                            )}
                                                             {aval.visitTimestamp && <span className="text-[8px] font-black text-emerald-600 flex items-center gap-0.5"><CheckCircle className="w-2.5 h-2.5" /> VERIFICADO</span>}
                                                         </div>
                                                     </div>
@@ -2753,44 +3306,64 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                         <a
                                                             href={`https://www.google.com/maps/search/?api=1&query=${aval.latitude},${aval.longitude}`}
                                                             target="_blank"
-                                                            className="p-2 text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors border border-slate-100"
+                                                            className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-100"
                                                         >
                                                             <Navigation className="w-3.5 h-3.5" />
                                                         </a>
                                                     )}
                                                 </div>
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                    {aval.facadeUrl && (
-                                                        <div className="space-y-1">
-                                                            <p className="text-[7px] font-black text-slate-400 uppercase px-1">Fachada</p>
-                                                            <div
-                                                                className="aspect-video rounded-lg overflow-hidden border border-slate-100 bg-slate-50 cursor-pointer"
-                                                                onClick={() => setFullPhotoUrl(aval.facadeUrl || null)}
-                                                            >
-                                                                <CachedImage src={aval.facadeUrl || ''} className="w-full h-full object-cover" />
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {aval.photoUrl && (
-                                                        <div className="space-y-1">
-                                                            <p className="text-[7px] font-black text-slate-400 uppercase px-1">Persona</p>
-                                                            <div
-                                                                className="aspect-video rounded-lg overflow-hidden border border-slate-100 bg-slate-50 cursor-pointer"
-                                                                onClick={() => setFullPhotoUrl(aval.photoUrl || null)}
-                                                            >
-                                                                <CachedImage src={aval.photoUrl || ''} className="w-full h-full object-cover" />
-                                                            </div>
-                                                        </div>
-                                                    )}
+
+                                                {/* Aval Address */}
+                                                <div className="space-y-1">
+                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 px-1"><MapPin className="w-2.5 h-2.5 text-blue-500" /> Domicilio</p>
+                                                    <div className="p-3 bg-white/80 backdrop-blur-sm border border-blue-100 rounded-xl">
+                                                        <p className="text-[10px] font-bold text-slate-700 uppercase leading-relaxed">
+                                                            {aval.address || 'SIN REGISTRO'}
+                                                        </p>
+                                                    </div>
                                                 </div>
 
-                                                {aval.guarantees && aval.guarantees.length > 0 && (
-                                                    <div className="flex flex-wrap gap-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
-                                                        {aval.guarantees.map((g, gi) => (
-                                                            <span key={gi} className="px-1.5 py-0.5 bg-white border border-slate-200 text-[8px] font-bold text-slate-600 rounded uppercase">
-                                                                {g.description}
-                                                            </span>
-                                                        ))}
+                                                {/* Aval Guarantees */}
+                                                <div className="space-y-1">
+                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 px-1"><Package className="w-2.5 h-2.5 text-green-500" /> Garantías ({aval.guarantees?.length || 0})</p>
+                                                    <div className="flex flex-wrap gap-1.5">
+                                                        {!aval.guarantees || aval.guarantees.length === 0 ? (
+                                                            <span className="text-[9px] text-slate-400 italic px-1">Sin garantías</span>
+                                                        ) : (
+                                                            aval.guarantees.map((g, gi) => (
+                                                                <span key={gi} className="px-2 py-0.5 bg-emerald-50 border border-emerald-100 text-[9px] font-bold text-emerald-700 rounded-md uppercase tracking-tight">
+                                                                    {typeof g === 'string' ? g : (g?.description || '')}
+                                                                </span>
+                                                            ))
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Photos in 2 columns for Aval */}
+                                                {(aval.facadeUrl || aval.photoUrl) && (
+                                                    <div className="grid grid-cols-2 gap-3 pt-2">
+                                                        {aval.facadeUrl && (
+                                                            <div className="space-y-1.5">
+                                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Fachada</p>
+                                                                <div
+                                                                    className="aspect-video rounded-xl overflow-hidden border border-blue-100 bg-white/80 backdrop-blur-sm cursor-pointer"
+                                                                    onClick={() => setFullPhotoUrl(aval.facadeUrl || null)}
+                                                                >
+                                                                    <CachedImage src={aval.facadeUrl} className="w-full h-full object-cover" />
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {aval.photoUrl && (
+                                                            <div className="space-y-1.5">
+                                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Persona</p>
+                                                                <div
+                                                                    className="aspect-video rounded-xl overflow-hidden border border-blue-100 bg-white/80 backdrop-blur-sm cursor-pointer"
+                                                                    onClick={() => setFullPhotoUrl(aval.photoUrl || null)}
+                                                                >
+                                                                    <CachedImage src={aval.photoUrl} className="w-full h-full object-cover" />
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>

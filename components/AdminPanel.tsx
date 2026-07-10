@@ -72,6 +72,12 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
     if (financiera?.requireClientPhoto && !client.clientPhotoUrl) missing.push('Foto Cliente');
     if (financiera?.requireFacade !== false && !client.facadeUrl) missing.push('Foto Fachada (P.D)');
     
+    // Check Client Guarantees
+    const minGuarantees = financiera?.minGuarantees ?? 0;
+    if (minGuarantees > 0 && (!client.guarantees || client.guarantees.length < minGuarantees)) {
+        missing.push(`Garantías Cliente (Mínimo: ${minGuarantees})`);
+    }
+
     // Guarantors logic
     const creditAmount = client.creditAmount || 0;
     let requiredGuarantors = 1;
@@ -93,6 +99,7 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
         missing.push(`Avales Registrados (Req: ${requiredGuarantors})`);
     } else {
         let providedGuarantors = 0;
+        const minGuaranteesForAval = financiera?.minGuaranteesForAval ?? 0;
         
         if (hasGuarantorsArray && client.avales) {
             providedGuarantors = client.avales.length;
@@ -103,6 +110,9 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
                 if (financiera?.requireGuarantorFacade !== false && !g.facadeUrl) {
                     missing.push(`Fachada Aval ${i+1}`);
                 }
+                if (minGuaranteesForAval > 0 && (!g.guarantees || g.guarantees.length < minGuaranteesForAval)) {
+                    missing.push(`Garantías Aval ${i+1} (Mínimo: ${minGuaranteesForAval})`);
+                }
             });
         } else if (hasSingleAval) {
             providedGuarantors = 1;
@@ -111,6 +121,9 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
             }
             if (financiera?.requireGuarantorFacade !== false && !client.avalFacadeUrl && !client.avalVisitTimestamp) {
                  missing.push(`Fachada Aval Principal`);
+            }
+            if (minGuaranteesForAval > 0) {
+                 missing.push(`Garantías Aval Principal (Mínimo: ${minGuaranteesForAval})`);
             }
         }
         
