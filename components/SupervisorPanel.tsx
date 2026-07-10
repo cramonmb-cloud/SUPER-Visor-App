@@ -940,17 +940,17 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
         // NEW: Populate multiple avales and their guarantees if they exist
         if (client.avales && client.avales.length > 0) {
-            setAval1Guarantees(client.avales[0].guarantees || []);
+            setAval1Guarantees(client.avales[0].guarantees ? client.avales[0].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')) : []);
             if (client.avales.length > 1) {
                 setAval2Name(client.avales[1].name);
                 setAval2Address(client.avales[1].address || '');
                 setAval2Cellphone(client.avales[1].cellphone || '');
-                setAval2Guarantees(client.avales[1].guarantees || []);
+                setAval2Guarantees(client.avales[1].guarantees ? client.avales[1].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')) : []);
                 if (client.avales.length > 2) {
                     setAval3Name(client.avales[2].name);
                     setAval3Address(client.avales[2].address || '');
                     setAval3Cellphone(client.avales[2].cellphone || '');
-                    setAval3Guarantees(client.avales[2].guarantees || []);
+                    setAval3Guarantees(client.avales[2].guarantees ? client.avales[2].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')) : []);
                 }
             } else {
                 setAval2Name(''); setAval2Address(''); setAval2Cellphone(''); setAval2Guarantees([]);
