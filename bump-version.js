@@ -35,3 +35,11 @@ const newVersion = `${major}.${formattedMinor}`;
 
 fs.writeFileSync(versionFilePath, `export const VERSION = "${newVersion}";\n`);
 console.log(`Version bumped from ${currentVersion} to ${newVersion} (${type})`);
+
+const swFilePath = path.join(__dirname, 'public', 'sw.js');
+if (fs.existsSync(swFilePath)) {
+  let swContent = fs.readFileSync(swFilePath, 'utf8');
+  swContent = swContent.replace(/const CACHE_NAME = ["']([^"']+)["'];/, `const CACHE_NAME = 'visor-app-v${newVersion}';`);
+  fs.writeFileSync(swFilePath, swContent);
+  console.log(`Service Worker CACHE_NAME updated to visor-app-v${newVersion}`);
+}
