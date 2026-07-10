@@ -1204,110 +1204,147 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             <div
                 key={client.id}
                 onClick={() => setSelectedClientHistory(client)}
-                className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-3 animate-in fade-in slide-in-from-bottom-2 active:bg-slate-50 transition-colors cursor-pointer relative group"
+                className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-2 active:bg-slate-50/50 hover:border-slate-200/80 hover:shadow-md transition-all cursor-pointer relative group"
             >
-                <div className="absolute top-3 right-3 flex gap-2">
-                    <button
-                        onClick={(e) => { e.stopPropagation(); setClientComments(client.comments || ''); setShowCommentsModal(client); }}
-                        className="p-2 bg-amber-50 text-amber-600 rounded-full hover:bg-amber-600 hover:text-white transition-colors"
-                        title="Comentarios"
-                    >
-                        <MessageSquare className="w-3.5 h-3.5" />
-                    </button>
-
-                    {canEdit && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); openEditModal(client); }}
-                            className="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
-                            title="Editar Cliente"
-                        >
-                            <Pencil className="w-3.5 h-3.5" />
-                        </button>
-                    )}
-
-                    {canArchive && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); confirmDeleteClient(client); }}
-                            className="p-2 bg-slate-100 text-slate-500 rounded-full hover:bg-red-50 hover:text-red-600 transition-colors"
-                            title="Archivar Cliente"
-                        >
-                            <Archive className="w-3.5 h-3.5" />
-                        </button>
-                    )}
-                </div>
-
-                <div className="flex justify-between items-start">
-                    <div className="flex items-center gap-3 flex-1 pr-16">
-                        {client.clientPhotoUrl && (
+                {/* TOP HEADER ROW: Photo, Name, and Badges */}
+                <div className="flex justify-between items-start gap-2">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {client.clientPhotoUrl ? (
                             <div className="w-12 h-12 rounded-xl overflow-hidden border border-slate-100 flex-shrink-0 shadow-sm">
                                 <CachedImage src={client.clientPhotoUrl} className="w-full h-full object-cover" />
                             </div>
+                        ) : (
+                            <div className="w-12 h-12 rounded-xl border border-dashed border-slate-200 bg-slate-50 flex items-center justify-center flex-shrink-0 text-slate-300">
+                                <User className="w-6 h-6" />
+                            </div>
                         )}
                         <div className="flex-1 min-w-0">
-                            <h3 className="font-black text-slate-800 uppercase text-sm flex items-center gap-2 truncate">
+                            <h3 className="font-black text-slate-800 uppercase text-sm flex items-center gap-1.5 truncate">
                                 {client.name}
                                 {visits.some(v => v.clientId === client.id && v.weekId === currentWeek?.id) && (
-                                    <CheckCircle className="w-4 h-4 text-green-500" />
+                                    <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
                                 )}
                             </h3>
-                            <p className="text-[9px] text-slate-400 font-mono font-bold uppercase mb-2">{client.id}</p>
-                            <div className="flex flex-wrap gap-2 text-[10px] uppercase font-black text-slate-500">
-                                <span className="flex items-center gap-1 bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg"><DollarSign className="w-3 h-3" /> ${client.creditAmount}</span>
-                                {client.cellphone && (
-                                    <a href={`tel:${client.cellphone}`} onClick={(e) => e.stopPropagation()} className="flex items-center gap-1 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-indigo-600 px-2 py-1 rounded-lg transition-colors">
-                                        <Smartphone className="w-3 h-3" /> {client.cellphone}
-                                    </a>
-                                )}
-                                {(() => {
-                                    const clientFin = financieras.find(f => f.id === client.financieraId);
-                                    const completion = checkClientCompleteness(client, clientFin);
-                                    return completion.isComplete ? (
-                                        <span className="flex items-center gap-1 text-[10px] text-green-700 bg-green-100 px-2 py-1 rounded-lg border border-green-200">
-                                            <CheckCircle className="w-3 h-3" /> COMPLETO
-                                        </span>
-                                    ) : (
-                                        <div className="relative group/status flex">
-                                            <span className="flex items-center gap-1 text-[10px] text-rose-700 bg-rose-100 px-2 py-1 rounded-lg border border-rose-200 cursor-help">
-                                                <AlertTriangle className="w-3 h-3" /> INCOMPLETO
-                                            </span>
-                                            <div className="pointer-events-none absolute bottom-full left-0 mb-2 w-max max-w-xs bg-slate-900 text-white text-[10px] rounded-lg p-2 opacity-0 group-hover/status:opacity-100 transition-opacity z-50 text-left shadow-xl">
-                                                <div className="font-bold text-slate-300 mb-1 border-b border-slate-700 pb-1">FALTA INFORMACIÓN:</div>
-                                                <ul className="list-disc pl-4 space-y-0.5">
-                                                    {completion.missing.map((m, i) => <li key={i}>{m}</li>)}
-                                                </ul>
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-                            </div>
+                            <p className="text-[9px] text-slate-400 font-mono font-bold uppercase">{client.id}</p>
                         </div>
                     </div>
+
+                    {/* COMPLETENESS BADGES */}
+                    <div className="flex-shrink-0">
+                        {(() => {
+                            const clientFin = financieras.find(f => f.id === client.financieraId);
+                            const completion = checkClientCompleteness(client, clientFin);
+                            return completion.isComplete ? (
+                                <span className="flex items-center gap-1 text-[9px] font-black text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full uppercase">
+                                    <CheckCircle className="w-3 h-3" /> COMPLETO
+                                </span>
+                            ) : (
+                                <div className="relative group/status flex justify-end">
+                                    <span className="flex items-center gap-1 text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full uppercase cursor-help">
+                                        <AlertTriangle className="w-3 h-3" /> INCOMPLETO
+                                    </span>
+                                    <div className="pointer-events-none absolute bottom-full right-0 mb-2 w-max max-w-xs bg-slate-950 text-white text-[10px] rounded-lg p-2.5 opacity-0 group-hover/status:opacity-100 transition-opacity z-50 text-left shadow-2xl">
+                                        <div className="font-black text-rose-400 mb-1 border-b border-slate-800 pb-1">FALTA INFORMACIÓN:</div>
+                                        <ul className="list-disc pl-4 space-y-0.5 font-bold">
+                                            {completion.missing.map((m, i) => <li key={i} className="uppercase">{m}</li>)}
+                                        </ul>
+                                    </div>
+                                </div>
+                            );
+                        })()}
+                    </div>
                 </div>
 
-                {/* Aval Info Compact */}
-                <div className="pt-3 border-t border-slate-50 flex items-center justify-between text-[10px]">
-                    <div className="flex flex-col">
-                        <span className="text-slate-400 font-black uppercase tracking-widest">Aval</span>
-                        <span className="font-bold text-slate-700 uppercase truncate max-w-[150px]">{client.avalName || 'Sin Aval'}</span>
-                    </div>
-                    <div className="flex items-center gap-1 text-slate-600 font-mono font-bold bg-slate-100 px-2 py-1 rounded-lg">
-                        <Phone className="w-3 h-3" /> {client.avalCellphone || 'N/A'}
-                    </div>
-                </div>
-
-                <div className="flex justify-end items-center mt-2 pt-2 border-t border-slate-50">
-                    <div className="flex items-center gap-2">
-                        <a
-                            href={`https://www.google.com/maps/search/?api=1&query=${client.latitude},${client.longitude}`}
-                            target="_blank"
-                            onClick={(e) => e.stopPropagation()}
-                            className="p-1.5 bg-slate-100 rounded-lg text-slate-500 hover:text-indigo-600"
+                {/* DETAILS ROW (Monto & Celular) */}
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-black uppercase text-slate-600">
+                    <span className="flex items-center justify-center gap-1.5 bg-indigo-50/50 text-indigo-600 px-2.5 py-1.5 rounded-xl border border-indigo-100/30">
+                        <DollarSign className="w-3.5 h-3.5" /> ${client.creditAmount}
+                    </span>
+                    {client.cellphone ? (
+                        <a 
+                            href={`tel:${client.cellphone}`} 
+                            onClick={(e) => e.stopPropagation()} 
+                            className="flex items-center justify-center gap-1.5 bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-indigo-600 px-2.5 py-1.5 rounded-xl border border-slate-100 transition-colors"
                         >
-                            <MapIcon className="w-3.5 h-3.5" />
+                            <Smartphone className="w-3.5 h-3.5" /> {client.cellphone}
                         </a>
-                        <div className="flex items-center gap-1 text-[9px] font-black text-indigo-400 uppercase">
-                            <History className="w-3 h-3" /> Ver Historial
+                    ) : (
+                        <span className="flex items-center justify-center gap-1.5 bg-slate-50 text-slate-400 px-2.5 py-1.5 rounded-xl border border-slate-100">
+                            <Smartphone className="w-3.5 h-3.5" /> SIN TEL
+                        </span>
+                    )}
+                </div>
+
+                {/* AVAL DETAILS ROW */}
+                <div className="bg-blue-50/30 border border-blue-100/50 p-3 rounded-xl flex items-center justify-between text-[10px]">
+                    <div className="flex flex-col min-w-0 pr-2">
+                        <span className="text-[7.5px] text-blue-500 font-black uppercase tracking-wider">Aval</span>
+                        <span className="font-bold text-slate-700 uppercase truncate">{client.avalName || 'Sin Aval'}</span>
+                    </div>
+                    {client.avalCellphone ? (
+                        <a 
+                            href={`tel:${client.avalCellphone}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-mono font-bold bg-blue-50/50 border border-blue-100/30 px-2 py-1 rounded-lg transition-colors"
+                        >
+                            <Phone className="w-3 h-3" /> {client.avalCellphone}
+                        </a>
+                    ) : (
+                        <span className="text-slate-400 font-bold bg-slate-100 px-2 py-1 rounded-lg">
+                            N/A
+                        </span>
+                    )}
+                </div>
+
+                {/* BOTTOM TOOLBAR: MAPS, HISTORIAL, AND ACTIONS */}
+                <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                    {/* Maps & Historial */}
+                    <div className="flex items-center gap-3">
+                        {client.latitude && (
+                            <a
+                                href={`https://www.google.com/maps/search/?api=1&query=${client.latitude},${client.longitude}`}
+                                target="_blank"
+                                onClick={(e) => e.stopPropagation()}
+                                className="p-2 bg-slate-50 hover:bg-slate-100 border border-slate-200/50 rounded-xl text-slate-500 hover:text-indigo-600 transition-colors"
+                                title="Ver en GPS"
+                            >
+                                <MapIcon className="w-4 h-4" />
+                            </a>
+                        )}
+                        <div className="flex items-center gap-1.5 text-[9px] font-black text-indigo-500 uppercase tracking-tight">
+                            <History className="w-3.5 h-3.5" /> Ver Historial
                         </div>
+                    </div>
+
+                    {/* Toolbar Actions */}
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setClientComments(client.comments || ''); setShowCommentsModal(client); }}
+                            className="p-2 bg-amber-50 text-amber-600 hover:bg-amber-100 hover:text-amber-700 border border-amber-200/30 rounded-xl transition-colors"
+                            title="Comentarios"
+                        >
+                            <MessageSquare className="w-3.5 h-3.5" />
+                        </button>
+
+                        {canEdit && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); openEditModal(client); }}
+                                className="p-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-200/30 rounded-xl transition-colors"
+                                title="Editar Cliente"
+                            >
+                                <Pencil className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+
+                        {canArchive && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); confirmDeleteClient(client); }}
+                                className="p-2 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 border border-red-200/30 rounded-xl transition-colors"
+                                title="Archivar Cliente"
+                            >
+                                <Archive className="w-3.5 h-3.5" />
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
