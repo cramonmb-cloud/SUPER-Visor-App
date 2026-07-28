@@ -8,6 +8,8 @@ import { query, collection, where, getDocs, limit } from 'firebase/firestore';
 import { CachedImage } from './CachedImage';
 import { checkClientCompleteness } from './AdminPanel';
 import { removeAccents } from '../constants';
+import jsQR from 'jsqr';
+
 
 interface SupervisorPanelProps {
     supervisor: Supervisor;
@@ -493,10 +495,14 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             canvas.height = video.videoHeight; canvas.width = video.videoWidth;
             const ctx = canvas.getContext('2d');
             if (ctx) {
-                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                const code = jsQR(imageData.data, imageData.width, imageData.height);
-                if (code?.data) { handleScanSuccess(code.data); return; }
+                try {
+                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const code = jsQR(imageData.data, imageData.width, imageData.height);
+                    if (code?.data) { handleScanSuccess(code.data); return; }
+                } catch (err) {
+                    console.error("Error al procesar cuadro de video QR:", err);
+                }
             }
         }
         animationFrameRef.current = requestAnimationFrame(tick);
