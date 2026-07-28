@@ -2787,29 +2787,34 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             </AnimatePresence>
 
             {/* MODAL DE CUMPLEAÑOS PANTALLA COMPLETA SIN BOTONES (POR TIEMPO) */}
-            {showCelebrationModal && (
-                <div className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/90 p-4 backdrop-blur-md select-none">
-                    <div className="w-full max-w-lg flex flex-col items-center text-center space-y-6">
-                        <h1 className="text-4xl sm:text-5xl font-black text-amber-400 tracking-tight uppercase drop-shadow-lg animate-pulse">
-                            ¡FELICIDADES!
-                        </h1>
+            {showCelebrationModal && (() => {
+                const supFin = data.financieras.find(f => f.id === supervisor.financieraId);
+                const mascotUrl = supFin?.birthdayPetUrl || settings?.birthdayPetUrl;
 
-                        {settings?.birthdayPetUrl ? (
-                            <div className="w-full max-h-[65vh] rounded-3xl overflow-hidden bg-white/5 border border-amber-400/30 p-3 shadow-2xl flex items-center justify-center">
-                                <img
-                                    src={settings.birthdayPetUrl}
-                                    alt="FELICIDADES"
-                                    className="w-full h-full max-h-[60vh] object-contain rounded-2xl"
-                                />
-                            </div>
-                        ) : (
-                            <div className="w-64 h-64 rounded-full bg-amber-400/20 border-4 border-amber-400/60 flex items-center justify-center">
-                                <span className="text-9xl">🎂</span>
-                            </div>
-                        )}
+                return (
+                    <div className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/90 p-4 backdrop-blur-md select-none">
+                        <div className="w-full max-w-lg flex flex-col items-center text-center space-y-6">
+                            <h1 className="text-4xl sm:text-5xl font-black text-amber-400 tracking-tight uppercase drop-shadow-lg animate-pulse">
+                                ¡FELICIDADES!
+                            </h1>
+
+                            {mascotUrl ? (
+                                <div className="w-full max-h-[65vh] rounded-3xl overflow-hidden bg-white/5 border border-amber-400/30 p-3 shadow-2xl flex items-center justify-center">
+                                    <img
+                                        src={mascotUrl}
+                                        alt="FELICIDADES"
+                                        className="w-full h-full max-h-[60vh] object-contain rounded-2xl"
+                                    />
+                                </div>
+                            ) : (
+                                <div className="w-64 h-64 rounded-full bg-amber-400/20 border-4 border-amber-400/60 flex items-center justify-center">
+                                    <span className="text-9xl">🎂</span>
+                                </div>
+                            )}
+                        </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             {/* MODAL DE ERROR DE REGISTRO */}
             <AnimatePresence>

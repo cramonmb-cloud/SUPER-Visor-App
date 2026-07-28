@@ -28,8 +28,8 @@ interface AdminPanelProps {
   onAddSystemUser: (name: string, pin: string, supervisorIds: string[], canCreateSupervisors: boolean, canManageWeeks: boolean, assignedFinancieraIds: string[], role: UserRole) => void;
   onUpdateSystemUser: (id: string, name: string, pin: string, supervisorIds: string[], canCreateSupervisors: boolean, canManageWeeks: boolean, assignedFinancieraIds: string[], role: UserRole) => void;
   onDeleteSystemUser: (id: string) => void;
-  onAddFinanciera: (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number) => void;
-  onUpdateFinanciera: (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number) => void;
+  onAddFinanciera: (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string) => void;
+  onUpdateFinanciera: (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string) => void;
   onDeleteFinanciera: (id: string) => void;
   onDeleteQRBatch: (batchId: string) => void;
   onBatchUpdateSupervisors: (ids: string[], data: Partial<Supervisor>) => void;
@@ -210,6 +210,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [finMaxClientActiveLoans, setFinMaxClientActiveLoans] = useState<number>(1);
   const [finMaxAvalRegistrations, setFinMaxAvalRegistrations] = useState<number>(2);
   const [finMaxClientAsAval, setFinMaxClientAsAval] = useState<number>(2);
+  const [finBirthdayPetUrl, setFinBirthdayPetUrl] = useState('');
   const [ruleMin, setRuleMin] = useState('');
   const [ruleMax, setRuleMax] = useState('');
   const [ruleGuarantors, setRuleGuarantors] = useState('1');
@@ -847,10 +848,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       e.preventDefault();
       if (!finName) return;
       if (editingFin) {
-          onUpdateFinanciera(editingFin.id, finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto, finRequireGuarantorFacade, finMaxClientActiveLoans, finMaxAvalRegistrations, finMaxClientAsAval);
+          onUpdateFinanciera(editingFin.id, finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto, finRequireGuarantorFacade, finMaxClientActiveLoans, finMaxAvalRegistrations, finMaxClientAsAval, finBirthdayPetUrl);
           setEditingFin(null);
       } else {
-          onAddFinanciera(finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto, finRequireGuarantorFacade, finMaxClientActiveLoans, finMaxAvalRegistrations, finMaxClientAsAval);
+          onAddFinanciera(finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto, finRequireGuarantorFacade, finMaxClientActiveLoans, finMaxAvalRegistrations, finMaxClientAsAval, finBirthdayPetUrl);
       }
       setFinName('');
       setFinMinGuarantees(0);
@@ -865,7 +866,27 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setFinMaxClientAsAval(2);
       setFinLogoUrl('');
       setFinLogoGifUrl('');
+      setFinBirthdayPetUrl('');
       setFinGuarantorRules([]);
+  };
+
+  const startEditFin = (fin: Financiera) => {
+      setEditingFin(fin);
+      setFinName(fin.name);
+      setFinMinGuarantees(fin.minGuarantees || 0);
+      setFinRequireClientPhoto(fin.requireClientPhoto || false);
+      setFinRequireFacade(fin.requireFacade || false);
+      setFinLogoUrl(fin.logoUrl || '');
+      setFinLogoGifUrl(fin.logoGifUrl || '');
+      setFinGuarantorRules(fin.guarantorRules || []);
+      setFinRequireGuaranteesForAval(fin.requireGuaranteesForAval || false);
+      setFinMinGuaranteesForAval(fin.minGuaranteesForAval || 0);
+      setFinRequireGuarantorPhoto(fin.requireGuarantorPhoto || false);
+      setFinRequireGuarantorFacade(fin.requireGuarantorFacade !== false);
+      setFinMaxClientActiveLoans(fin.maxClientActiveLoans ?? 1);
+      setFinMaxAvalRegistrations(fin.maxAvalRegistrations ?? 2);
+      setFinMaxClientAsAval(fin.maxClientAsAval ?? 2);
+      setFinBirthdayPetUrl(fin.birthdayPetUrl || '');
   };
 
   const addGuarantorRule = () => {
@@ -2889,20 +2910,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                  </div>
 
                                                  <div className="space-y-1.5">
-                                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 flex items-center gap-1">
-                                                        <PlayCircle className="w-3 h-3 text-indigo-500"/> Logo Animado (GIF)
-                                                     </label>
-                                                     <div className="relative">
-                                                         <ImageIconLucide className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                                         <input 
-                                                             type="text" 
-                                                             value={finLogoGifUrl} 
-                                                             onChange={e => setFinLogoGifUrl(e.target.value)} 
-                                                             placeholder="https://... (GIF)" 
-                                                             className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-xs" 
-                                                         />
-                                                     </div>
-                                                 </div>
+                                                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 flex items-center gap-1">
+                                                         <PlayCircle className="w-3 h-3 text-indigo-500"/> Logo Animado (GIF)
+                                                      </label>
+                                                      <div className="relative">
+                                                          <ImageIconLucide className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                                                          <input 
+                                                              type="text" 
+                                                              value={finLogoGifUrl} 
+                                                              onChange={e => setFinLogoGifUrl(e.target.value)} 
+                                                              placeholder="https://... (GIF)" 
+                                                              className="w-full p-4 pl-11 bg-slate-50 border border-slate-200 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-xs" 
+                                                          />
+                                                      </div>
+                                                  </div>
+
+                                                  <div className="space-y-1.5">
+                                                      <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest px-1 flex items-center gap-1.5">
+                                                         <Sparkles className="w-3.5 h-3.5"/> URL Mascota Cumpleaños
+                                                      </label>
+                                                      <div className="relative">
+                                                          <ImageIconLucide className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400" />
+                                                          <input 
+                                                              type="text" 
+                                                              value={finBirthdayPetUrl} 
+                                                              onChange={e => setFinBirthdayPetUrl(e.target.value)} 
+                                                              placeholder="https://.../mascota.png" 
+                                                              className="w-full p-4 pl-11 bg-indigo-50/40 border border-indigo-100 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-xs" 
+                                                          />
+                                                      </div>
+                                                      <p className="text-[9px] text-slate-400 font-medium px-1 italic">Imagen que se mostrará en los cumpleaños de esta financiera</p>
+                                                  </div>
 
                                                  <div className="grid grid-cols-1 gap-4">
                                                     <div className="space-y-1.5">

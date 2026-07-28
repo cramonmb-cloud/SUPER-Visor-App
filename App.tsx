@@ -710,7 +710,7 @@ const App: React.FC = () => {
     }
   };
 
-  const addFinanciera = async (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number) => { 
+  const addFinanciera = async (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string) => { 
     await addDoc(collection(db, 'financieras'), { 
       name: name.toUpperCase(), 
       createdAt: Date.now(), 
@@ -726,11 +726,12 @@ const App: React.FC = () => {
       requireGuarantorFacade: requireGuarantorFacade !== false, // Defaults to true
       maxClientActiveLoans: maxClientActiveLoans ?? 1, // Defaults to 1
       maxAvalRegistrations: maxAvalRegistrations ?? 2, // Defaults to 2
-      maxClientAsAval: maxClientAsAval ?? 2 // Defaults to 2
+      maxClientAsAval: maxClientAsAval ?? 2, // Defaults to 2
+      birthdayPetUrl: birthdayPetUrl || ''
     }); 
   };
   
-  const updateFinanciera = async (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number) => { 
+  const updateFinanciera = async (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string) => { 
     await updateDoc(doc(db, 'financieras', id), { 
       name: name.toUpperCase(), 
       minGuarantees, 
@@ -745,7 +746,8 @@ const App: React.FC = () => {
       requireGuarantorFacade: requireGuarantorFacade !== false,
       maxClientActiveLoans: maxClientActiveLoans ?? 1,
       maxAvalRegistrations: maxAvalRegistrations ?? 2,
-      maxClientAsAval: maxClientAsAval ?? 2
+      maxClientAsAval: maxClientAsAval ?? 2,
+      birthdayPetUrl: birthdayPetUrl || ''
     }); 
   };
   const deleteFinanciera = async (id: string) => { await deleteDoc(doc(db, 'financieras', id)); };

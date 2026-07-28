@@ -72,6 +72,7 @@ export interface Financiera {
   maxClientActiveLoans?: number; // NEW: Maximum active loans/registrations a client can have
   maxAvalRegistrations?: number; // NEW: Maximum registrations an aval can have
   maxClientAsAval?: number; // NEW: Maximum registrations a client can have as an aval
+  birthdayPetUrl?: string; // NEW: Image URL for birthday mascot per Financiera
 }
 
 export interface Guarantee {
