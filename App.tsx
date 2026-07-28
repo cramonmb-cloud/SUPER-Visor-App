@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Loader2, RefreshCw, Trash2, RotateCcw, X } from 'lucide-react';
 import { VERSION } from './version';
 import { Layout } from './components/Layout';
@@ -278,7 +278,60 @@ const App: React.FC = () => {
               setCurrentUser(prev => prev ? { ...prev, data: updatedSup, name: updatedSup.name } : null);
           }
       }
-  }, [appState.supervisors, currentUser?.role]); // Removed currentUser.data from deps to avoid potential loops, rely on appState update trigger
+  }, [appState.supervisors, currentUser]);
+
+  // Auto-rotación de ciclos (Sábado a Viernes) por financiera al vencer la semana en curso
+  const isAdvancingCycleRef = useRef(false);
+  useEffect(() => {
+      if (appState.weeks.length === 0 || appState.financieras.length === 0 || isAdvancingCycleRef.current) return;
+
+      const now = Date.now();
+
+      const autoAdvanceCycles = async () => {
+          isAdvancingCycleRef.current = true;
+          try {
+              for (const fin of appState.financieras) {
+                  const finWeeks = appState.weeks.filter(w => w.financieraId === fin.id);
+                  const activeWeek = finWeeks.find(w => w.isActive);
+
+                  // Si la semana activa ya venció (now > endDate)
+                  if (activeWeek && now > activeWeek.endDate) {
+                      // 1. Desactivar la semana anterior
+                      await updateDoc(doc(db, 'weeks', activeWeek.id), { isActive: false });
+
+                      // 2. Calcular las fechas de la nueva semana (Sábado a Viernes)
+                      // El inicio es el Sábado inmediatamente posterior (1 ms después de endDate)
+                      const nextStartDate = new Date(activeWeek.endDate + 1);
+                      nextStartDate.setHours(0, 0, 0, 0);
+
+                      const nextEndDate = new Date(nextStartDate);
+                      nextEndDate.setDate(nextStartDate.getDate() + 6);
+                      nextEndDate.setHours(23, 59, 59, 999);
+
+                      const id = `W-${nextStartDate.getTime()}-${fin.id}`;
+                      const name = `SEMANA DEL ${nextStartDate.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).toUpperCase()} AL ${nextEndDate.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).toUpperCase()}`;
+
+                      // 3. Crear y activar el nuevo ciclo
+                      await setDoc(doc(db, 'weeks', id), {
+                          id,
+                          name,
+                          startDate: nextStartDate.getTime(),
+                          endDate: nextEndDate.getTime(),
+                          isActive: true,
+                          createdAt: Date.now(),
+                          financieraId: fin.id
+                      });
+                  }
+              }
+          } catch (error) {
+              console.error("Error auto-rotando ciclo de semanas:", error);
+          } finally {
+              isAdvancingCycleRef.current = false;
+          }
+      };
+
+      autoAdvanceCycles();
+  }, [appState.weeks, appState.financieras]);
 
   const forceRefresh = () => {
       if(confirm("¿Forzar actualización de datos?")) {
@@ -514,8 +567,8 @@ const App: React.FC = () => {
       for (const d of activeWeeks) await updateDoc(doc(db, 'weeks', d.id), { isActive: false });
       await updateDoc(doc(db, 'weeks', weekId), { isActive: true });
   };
-  const addSupervisor = async (name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string) => { 
-    const docRef = await addDoc(collection(db, 'supervisors'), { name, pin, canEditClients, canArchiveClients, canEditPhotos, financieraId, createdAt: Date.now(), loginHistory: [] }); 
+  const addSupervisor = async (name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string, birthDay?: number, birthMonth?: number) => { 
+    const docRef = await addDoc(collection(db, 'supervisors'), { name, pin, canEditClients, canArchiveClients, canEditPhotos, financieraId, birthDay: birthDay || null, birthMonth: birthMonth || null, createdAt: Date.now(), loginHistory: [] }); 
     if (currentUser?.role === UserRole.VIEWER) {
       const sysUser = currentUser.data as SystemUser;
       await updateDoc(doc(db, 'system_users', sysUser.id), {
@@ -523,7 +576,8 @@ const App: React.FC = () => {
       });
     }
   };
-  const updateSupervisor = async (id: string, name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string) => { await updateDoc(doc(db, 'supervisors', id), { name, pin, canEditClients, canArchiveClients, canEditPhotos, financieraId }); };
+  const updateSupervisor = async (id: string, name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string, birthDay?: number, birthMonth?: number) => { await updateDoc(doc(db, 'supervisors', id), { name, pin, canEditClients, canArchiveClients, canEditPhotos, financieraId, birthDay: birthDay || null, birthMonth: birthMonth || null }); };
+  const updateSupervisorSelf = async (id: string, data: Partial<Supervisor>) => { await updateDoc(doc(db, 'supervisors', id), data); };
   const batchUpdateSupervisors = async (ids: string[], data: Partial<Supervisor>) => {
     for (const id of ids) {
       await updateDoc(doc(db, 'supervisors', id), data);
@@ -540,7 +594,7 @@ const App: React.FC = () => {
       }
     }
   };
-  const updateSettings = async (prefix: string, seq: string, appName: string, rules: any, vName: string, vColor: string, logoUrl: string, designVersion?: 'v1' | 'v2', logoGifUrl?: string, footerLogoUrl?: string, footerInfoHtml?: string) => { 
+  const updateSettings = async (prefix: string, seq: string, appName: string, rules: any, vName: string, vColor: string, logoUrl: string, designVersion?: 'v1' | 'v2', logoGifUrl?: string, footerLogoUrl?: string, footerInfoHtml?: string, birthdayPetUrl?: string, birthdayDurationSeconds?: number) => { 
     await setDoc(doc(db, 'settings', 'global'), { 
       qrPrefix: prefix, 
       nextSequence: seq, 
@@ -552,7 +606,9 @@ const App: React.FC = () => {
       adminDesignVersion: designVersion || 'v1',
       logoGifUrl: logoGifUrl || '',
       footerLogoUrl: footerLogoUrl || '',
-      footerInfoHtml: footerInfoHtml || ''
+      footerInfoHtml: footerInfoHtml || '',
+      birthdayPetUrl: birthdayPetUrl || '',
+      birthdayDurationSeconds: birthdayDurationSeconds ?? 5
     }); 
   };
   const generateQRCodes = async (count: number, prefix: string, financieraId: string) => {
@@ -1004,6 +1060,7 @@ const App: React.FC = () => {
                   allWeeks={appState.weeks.filter(w => w.financieraId === ((currentUser.data as Supervisor).financieraId || ''))} 
                   allSupervisors={appState.supervisors}
                   financieras={appState.financieras}
+                  onUpdateSupervisorSelf={updateSupervisorSelf}
                 />}
           </Layout>
         )}

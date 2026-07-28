@@ -5,9 +5,9 @@ import { Scan, MapPin, Camera, Check, X, Loader2, RefreshCw, UploadCloud, Map as
 import { storage, db } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { query, collection, where, getDocs, limit } from 'firebase/firestore';
-import jsQR from "jsqr";
 import { CachedImage } from './CachedImage';
 import { checkClientCompleteness } from './AdminPanel';
+import { removeAccents } from '../constants';
 
 interface SupervisorPanelProps {
     supervisor: Supervisor;
@@ -25,6 +25,7 @@ interface SupervisorPanelProps {
     allWeeks: WorkWeek[];
     allSupervisors: Supervisor[];
     financieras: Financiera[];
+    onUpdateSupervisorSelf?: (id: string, data: Partial<Supervisor>) => Promise<void>;
 }
 
 const compressImage = (file: File): Promise<File> => {
@@ -60,7 +61,7 @@ const compressImage = (file: File): Promise<File> => {
 };
 
 export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
-    supervisor, clients, visits, onRegisterClient, onRecordVisit, onUpdateAvalVisit, onUpdateClient, onDeleteClient, onFetchClient, validQRs, settings, currentWeek, allWeeks = [], allSupervisors = [], financieras = []
+    supervisor, clients, visits, onRegisterClient, onRecordVisit, onUpdateAvalVisit, onUpdateClient, onDeleteClient, onFetchClient, validQRs, settings, currentWeek, allWeeks = [], allSupervisors = [], financieras = [], onUpdateSupervisorSelf
 }) => {
     const [view, setView] = useState<'list' | 'scan' | 'aval_visit'>('list');
     const [targetAvalClient, setTargetAvalClient] = useState<Client | null>(null);
@@ -117,6 +118,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
     const [facadeFile, setFacadeFile] = useState<File | null>(null);
     const [facadePreview, setFacadePreview] = useState<string | null>(null);
+    const [confirmCardQrMatches, setConfirmCardQrMatches] = useState(false);
     const [avalGuarantees, setAvalGuarantees] = useState<Guarantee[]>([]);
     const [newAvalGuarantee, setNewAvalGuarantee] = useState('');
     const [aval1Guarantees, setAval1Guarantees] = useState<string[]>([]);
@@ -1054,15 +1056,15 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             return;
         }
 
-        const normalizedTyped = clientName.trim().toUpperCase();
+        const normalizedTyped = removeAccents(clientName.trim().toUpperCase());
         if (!normalizedTyped || ignoredNames.includes(normalizedTyped)) {
             setCoincidenceClient(null);
             return;
         }
 
-        // Find EXACT coincidence (Full Name equality) within the same financiera
+        // Find EXACT coincidence (Full Name equality without accents) within the same financiera
         const found = financieraClients.find(c => {
-            const normalizedClientName = c.name.trim().toUpperCase();
+            const normalizedClientName = removeAccents(c.name.trim().toUpperCase());
             return normalizedClientName === normalizedTyped;
         });
 
@@ -1083,7 +1085,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             return;
         }
 
-        const normalizedTyped = avalName.trim().toUpperCase();
+        const normalizedTyped = removeAccents(avalName.trim().toUpperCase());
         if (!normalizedTyped || ignoredAvalNames.includes(normalizedTyped) || normalizedTyped.length < 5) {
             setCoincidenceAval(null);
             return;
@@ -1096,10 +1098,10 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
         clients.forEach(cl => {
             if (cl.isArchived) return;
-            const normalizedName = cl.name?.trim().toUpperCase();
-            const normalizedAvalName = cl.avalName?.trim().toUpperCase();
+            const normalizedName = removeAccents((cl.name || '').trim().toUpperCase());
+            const normalizedAvalName = removeAccents((cl.avalName || '').trim().toUpperCase());
             const isAvalInThisRecord = normalizedAvalName === normalizedTyped ||
-                cl.avales?.some(a => a.name?.trim().toUpperCase() === normalizedTyped);
+                cl.avales?.some(a => removeAccents((a.name || '').trim().toUpperCase()) === normalizedTyped);
 
             if (normalizedName === normalizedTyped) {
                 isAlreadyClient = true;
@@ -1127,6 +1129,54 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         const t = setTimeout(() => setDataLoaded(true), 1200);
         return () => clearTimeout(t);
     }, []);
+
+    // NEW: Birthday confirmation state for Supervisor
+    const [showBirthdayModal, setShowBirthdayModal] = useState(false);
+    const [bDayInput, setBDayInput] = useState<string>('');
+    const [bMonthInput, setBMonthInput] = useState<string>('');
+    const [isSavingBirthday, setIsSavingBirthday] = useState(false);
+    const [showCelebrationModal, setShowCelebrationModal] = useState(false);
+
+    // NEW: Check if today is supervisor's birthday or if birthday is not registered
+    useEffect(() => {
+        const supData = allSupervisors.find(s => s.id === supervisor?.id) || supervisor;
+        
+        const now = new Date();
+        const currentDay = now.getDate();
+        const currentMonth = now.getMonth() + 1; // 1-12
+
+        const bDay = supData?.birthDay !== undefined && supData?.birthDay !== null ? Number(supData.birthDay) : null;
+        const bMonth = supData?.birthMonth !== undefined && supData?.birthMonth !== null ? Number(supData.birthMonth) : null;
+
+        console.log("🎂 Verificando Cumpleaños Supervisor:", {
+            supervisorName: supData?.name,
+            registeredDay: bDay,
+            registeredMonth: bMonth,
+            todayDay: currentDay,
+            todayMonth: currentMonth
+        });
+
+        if (bDay !== null && bMonth !== null && bDay > 0 && bMonth > 0) {
+            if (bDay === currentDay && bMonth === currentMonth) {
+                console.log("🎉 ¡ES EL CUMPLEAÑOS DEL SUPERVISOR HOY!");
+                setShowCelebrationModal(true);
+                setShowBirthdayModal(false);
+            }
+        } else {
+            setShowBirthdayModal(true);
+        }
+    }, [supervisor, allSupervisors]);
+
+    // NEW: Auto dismiss celebration modal after configured duration in settings
+    useEffect(() => {
+        if (!showCelebrationModal) return;
+        const durationSec = settings?.birthdayDurationSeconds ?? 5;
+        const timer = setTimeout(() => {
+            setShowCelebrationModal(false);
+        }, durationSec * 1000);
+
+        return () => clearTimeout(timer);
+    }, [showCelebrationModal, settings?.birthdayDurationSeconds]);
 
     // NEW: Detect if it's a new cycle with 0 registrations or visits for this supervisor and show welcome modal
     useEffect(() => {
@@ -1824,7 +1874,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                         <input
                                             type="text"
                                             value={clientName}
-                                            onChange={e => setClientName(e.target.value.toUpperCase())}
+                                            onChange={e => setClientName(removeAccents(e.target.value).toUpperCase())}
                                             disabled={isRenewalMode && !!clientName}
                                             className={`w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase ${isRenewalMode && clientName ? 'opacity-60 bg-slate-50 cursor-not-allowed' : ''}`}
                                             placeholder="Nombre completo"
@@ -1835,7 +1885,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                             </div>
                                         )}
                                     </div>
-                                    <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase" placeholder="Domicilio" />
+                                    <input type="text" value={clientAddress} onChange={e => setClientAddress(removeAccents(e.target.value).toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase" placeholder="Domicilio" />
                                     <div className="grid grid-cols-2 gap-3">
                                         <input type="number" inputMode="numeric" value={creditAmount} onChange={e => setCreditAmount(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Monto $" />
                                         <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={cellphone} onChange={e => setCellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Celular" />
@@ -1995,8 +2045,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                     </div>
                                 )}
 
-                                <input type="text" value={avalName} onChange={e => { setAvalName(e.target.value.toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
-                                <input type="text" value={avalAddress} onChange={e => { setAvalAddress(e.target.value.toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
+                                <input type="text" value={avalName} onChange={e => { setAvalName(removeAccents(e.target.value).toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                <input type="text" value={avalAddress} onChange={e => { setAvalAddress(removeAccents(e.target.value).toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
                                 <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={avalCellphone} onChange={e => { setAvalCellphone(e.target.value.replace(/\D/g, '')); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
 
                                 {/* Garantías del Aval 1 */}
@@ -2093,8 +2143,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                         </div>
                                     )}
 
-                                    <input type="text" value={aval2Name} onChange={e => { setAval2Name(e.target.value.toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
-                                    <input type="text" value={aval2Address} onChange={e => { setAval2Address(e.target.value.toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
+                                    <input type="text" value={aval2Name} onChange={e => { setAval2Name(removeAccents(e.target.value).toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                    <input type="text" value={aval2Address} onChange={e => { setAval2Address(removeAccents(e.target.value).toUpperCase()); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
                                     <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={aval2Cellphone} onChange={e => { setAval2Cellphone(e.target.value.replace(/\D/g, '')); if (aval2IsClient) setAval2IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
 
                                     {/* Garantías del Aval 2 */}
@@ -2281,62 +2331,113 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             {scanStatus === 'recording_visit' && <div className="flex-1 flex flex-col items-center justify-center bg-indigo-50 text-indigo-900 rounded-3xl p-8 text-center animate-pulse"><Loader2 className="w-20 h-20 animate-spin text-indigo-600 mb-8" /><h3 className="text-2xl font-black uppercase tracking-tight">Obteniendo GPS...</h3></div>}
             {scanStatus === 'visit_success' && <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-3xl p-8 text-center shadow-inner"><div className="bg-green-100 p-6 rounded-full mb-6"><CheckCircle className="w-24 h-24 text-green-500" /></div><h2 className="text-3xl font-black text-slate-800 uppercase tracking-tight text-slate-900">Visita Registrada</h2><button onClick={() => setView('list')} className="mt-10 bg-slate-900 text-white px-10 py-4 rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-transform">Entendido</button></div>}
 
-            {scanStatus === 'invalid' && (
-                <div className="flex-1 flex flex-col items-center justify-center bg-white rounded-3xl p-8 text-center shadow-inner border border-slate-100 max-w-md mx-auto space-y-6">
-                    <div className="bg-amber-50 p-6 rounded-full border border-amber-200">
-                        <ShieldAlert className="w-20 h-20 text-amber-500 animate-bounce" />
-                    </div>
-                    <div className="space-y-3">
-                        <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight">Código No Autorizado</h2>
-                        <div className="bg-slate-50 border border-slate-100 inline-flex items-center gap-2 px-4 py-1.5 rounded-full">
-                            <QrCode className="w-4 h-4 text-slate-500" />
-                            <span className="text-xs font-black text-slate-600 font-mono tracking-tight uppercase">{scannedCode}</span>
-                        </div>
-                        <p className="text-sm text-slate-500 leading-relaxed max-w-sm">
-                            {(() => {
-                                const existing = clients.find(c => c.id === scannedCode);
-                                if (existing && existing.supervisorId !== supervisor.id) {
-                                    const owner = allSupervisors.find(s => s.id === existing.supervisorId);
-                                    return `Este código YA ESTÁ REGISTRADO por el supervisor "${owner?.name || 'otro supervisor'}". No puedes utilizar un código que ya pertenece a otra ruta.`;
-                                }
-                                return "El código ingresado no pertenece a un lote de códigos QR pre-autorizados o no está registrado para este ciclo.";
-                            })()}
-                        </p>
-                        <p className="text-[11px] text-amber-600 font-bold bg-amber-50 rounded-xl p-3 leading-snug">
-                            {clients.some(c => c.id === scannedCode)
-                                ? "⚠️ Si crees que esto es un error, contacta al administrador para reasignar el código o archivarlo del supervisor anterior."
-                                : "⚠️ Si este código pertenece a una tarjeta física o documento válido de un nuevo cliente, se recomienda registrar su lote QR en el Panel de Administrador."
-                            }
-                        </p>
-                    </div>
-
-                    <div className="w-full flex flex-col gap-3 pt-4">
-                        <button
-                            onClick={() => setScanStatus('found_new')}
-                            className="w-full py-4 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl active:scale-95 transition-all flex items-center justify-center gap-2"
+            {/* MODAL CÓDIGO NO AUTORIZADO / NO REGISTRADO */}
+            <AnimatePresence>
+                {scanStatus === 'invalid' && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden"
                         >
-                            <Plus className="w-4 h-4 text-amber-200" />
-                            Omitir Validación y Registrar Nuevo Cliente
-                        </button>
+                            <div className="bg-amber-500 p-4 flex items-center justify-between text-white">
+                                <div className="flex items-center gap-3">
+                                    <ShieldAlert className="w-6 h-6 animate-pulse" />
+                                    <h3 className="font-black uppercase text-sm tracking-tight text-white">Código No Autorizado</h3>
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        setConfirmCardQrMatches(false);
+                                        setScanStatus('idle');
+                                    }}
+                                    className="p-1 rounded-full hover:bg-black/20 transition-colors text-white"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
 
-                        <div className="flex gap-2">
-                            <button
-                                onClick={() => setScanStatus('idle')}
-                                className="flex-1 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold uppercase text-[10px] tracking-widest transition-colors flex items-center justify-center gap-2"
-                            >
-                                <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
-                                Reintentar
-                            </button>
-                            <button
-                                onClick={() => setView('list')}
-                                className="flex-1 py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold uppercase text-[10px] tracking-widest transition-colors"
-                            >
-                                Volver a la Lista
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                            <div className="p-6 space-y-4">
+                                <div className="flex flex-col items-center text-center">
+                                    <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 mb-2">
+                                        <QrCode className="w-10 h-10 text-amber-500" />
+                                    </div>
+                                    <span className="text-xs font-mono font-black text-slate-800 bg-slate-100 px-3 py-1 rounded-lg uppercase tracking-tight">
+                                        {scannedCode}
+                                    </span>
+                                </div>
+
+                                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 text-center">
+                                    <p className="text-xs font-bold text-slate-700 leading-snug">
+                                        {(() => {
+                                            const existing = clients.find(c => c.id === scannedCode);
+                                            if (existing && existing.supervisorId !== supervisor.id) {
+                                                const owner = allSupervisors.find(s => s.id === existing.supervisorId);
+                                                const firstName = owner?.name ? owner.name.split('-')[0].trim().split(' ')[0] : 'otro supervisor';
+                                                return <>Este código ya pertenece a la ruta de <span className="text-indigo-600 font-black">{firstName}</span>.</>;
+                                            }
+                                            return "Este código QR no está registrado.";
+                                        })()}
+                                    </p>
+                                </div>
+
+                                {/* Casilla de confirmación táctil optimizada para celular */}
+                                <button
+                                    type="button"
+                                    onClick={() => setConfirmCardQrMatches(!confirmCardQrMatches)}
+                                    className={`w-full p-4 rounded-2xl border-2 transition-all flex items-center gap-3.5 text-left active:scale-[0.98] select-none ${
+                                        confirmCardQrMatches 
+                                            ? 'bg-amber-500 border-amber-600 text-white shadow-md shadow-amber-200' 
+                                            : 'bg-slate-50 border-slate-200/80 text-slate-700 hover:bg-slate-100/80'
+                                    }`}
+                                >
+                                    <div className={`w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors ${
+                                        confirmCardQrMatches ? 'bg-white text-amber-600' : 'border-2 border-slate-300 bg-white'
+                                    }`}>
+                                        {confirmCardQrMatches && <Check className="w-4 h-4 stroke-[3]" />}
+                                    </div>
+                                    <span className={`text-xs font-black leading-snug uppercase tracking-tight ${
+                                        confirmCardQrMatches ? 'text-white' : 'text-slate-800'
+                                    }`}>
+                                        ¿El código ingresado está exactamente así en la Tarjeta de Pago?
+                                    </span>
+                                </button>
+
+                                <div className="flex gap-3 pt-1">
+                                    <button
+                                        onClick={() => {
+                                            setConfirmCardQrMatches(false);
+                                            setScanStatus('idle');
+                                        }}
+                                        className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-wider hover:bg-slate-200 transition-all active:scale-95"
+                                    >
+                                        Cerrar
+                                    </button>
+                                    <button
+                                        disabled={!confirmCardQrMatches}
+                                        onClick={() => {
+                                            setConfirmCardQrMatches(false);
+                                            setScanStatus('found_new');
+                                        }}
+                                        className={`flex-1 py-3.5 rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg flex items-center justify-center gap-1.5 transition-all ${
+                                            confirmCardQrMatches 
+                                                ? 'bg-amber-600 text-white hover:bg-amber-700 active:scale-95 shadow-amber-100' 
+                                                : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                                        }`}
+                                    >
+                                        Registrar QR
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* MODAL COINCIDENCIA DE NOMBRE */}
             <AnimatePresence>
@@ -2353,14 +2454,25 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                             exit={{ scale: 0.9, y: 20 }}
                             className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden"
                         >
-                            <div className="bg-amber-500 p-4 flex items-center gap-3 text-white">
-                                <AlertTriangle className="w-6 h-6 animate-pulse" />
-                                <h3 className="font-black uppercase text-sm tracking-tight text-white">¡Duplicidad Detectada!</h3>
+                            <div className="bg-amber-500 p-4 flex items-center justify-between text-white">
+                                <div className="flex items-center gap-3">
+                                    <AlertTriangle className="w-6 h-6 animate-pulse" />
+                                    <h3 className="font-black uppercase text-sm tracking-tight text-white">Persona ya registrada</h3>
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        setClientName('');
+                                        setCoincidenceClient(null);
+                                    }}
+                                    className="p-1 rounded-full hover:bg-amber-600/50 transition-colors text-white"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
                             </div>
 
                             <div className="p-6 space-y-6">
                                 <div className="flex flex-col items-center text-center">
-                                    <div className="w-24 h-24 rounded-2xl overflow-hidden border-4 border-slate-100 shadow-lg mb-4 bg-slate-50">
+                                    <div className="w-20 h-20 rounded-2xl overflow-hidden border-4 border-slate-100 shadow-md mb-3 bg-slate-50">
                                         {coincidenceClient.clientPhotoUrl || coincidenceClient.facadeUrl ? (
                                             <CachedImage src={coincidenceClient.clientPhotoUrl || coincidenceClient.facadeUrl || ''} className="w-full h-full object-cover" />
                                         ) : (
@@ -2369,18 +2481,15 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                             </div>
                                         )}
                                     </div>
-                                    <h4 className="text-xl font-black text-slate-900 uppercase leading-tight">{coincidenceClient.name}</h4>
-                                    <p className="mt-2 text-[10px] font-black text-red-600 bg-red-50 px-4 py-1.5 rounded-full border border-red-100 uppercase">
-                                        ¡ESTA PERSONA YA ES UN CLIENTE! (LÍMITE: 1 VEZ)
-                                    </p>
+                                    <h4 className="text-lg font-black text-slate-900 uppercase leading-tight">{coincidenceClient.name}</h4>
                                 </div>
 
-                                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
-                                    <p className="text-[10px] font-bold text-slate-600 text-center uppercase leading-tight">
-                                        POR REGLAMENTO, UNA PERSONA SOLO PUEDE SER <span className="text-indigo-600 font-black">CLIENTE 1 VEZ</span> Y <span className="text-indigo-600 font-black">AVAL 2 VECES</span>.
+                                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2 text-center">
+                                    <p className="text-xs font-bold text-slate-700 leading-snug">
+                                        Esta persona ya está registrada. Por reglamento, solo se permite <span className="text-indigo-600 font-black">1 Préstamo</span> y ser <span className="text-indigo-600 font-black">Aval de 2 clientes</span>.
                                     </p>
-                                    <p className="text-[9px] font-bold text-slate-400 text-center uppercase">
-                                        Si se trata de una renovación, selecciona la opción correspondiente abajo para reutilizar los datos.
+                                    <p className="text-xs font-black text-indigo-600 uppercase tracking-wide pt-1">
+                                        ¿Quieres renovar a esta persona?
                                     </p>
                                 </div>
 
@@ -2390,19 +2499,19 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                             setClientName('');
                                             setCoincidenceClient(null);
                                         }}
-                                        className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all active:scale-95"
+                                        className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-wider hover:bg-slate-200 transition-all active:scale-95"
                                     >
-                                        Ignorar
+                                        Cerrar
                                     </button>
                                     <button
                                         onClick={() => {
                                             handleSelectRenewalClient(coincidenceClient);
                                             setCoincidenceClient(null);
                                         }}
-                                        className="flex-2 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all active:scale-95"
+                                        className="flex-1 py-3.5 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all active:scale-95"
                                     >
-                                        <RefreshCw className="w-3.5 h-3.5" />
-                                        Renovar/Usar Datos
+                                        <RefreshCw className="w-4 h-4" />
+                                        Renovar
                                     </button>
                                 </div>
                             </div>
@@ -2426,57 +2535,109 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                             exit={{ scale: 0.9, y: 20 }}
                             className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden"
                         >
-                            <div className={`${coincidenceAval.count >= coincidenceAval.limit ? 'bg-red-500' : 'bg-amber-500'} p-4 flex items-center gap-3 text-white`}>
-                                <AlertTriangle className="w-6 h-6 animate-pulse" />
-                                <h3 className="font-black uppercase text-sm tracking-tight">
-                                    {coincidenceAval.count >= coincidenceAval.limit ? 'Límite de Avales Alcanzado' : coincidenceAval.isAlreadyClient ? 'Persona ya es Cliente' : 'Aval con Registros Previos'}
-                                </h3>
+                            <div className={`${coincidenceAval.count >= coincidenceAval.limit ? 'bg-red-500' : 'bg-amber-500'} p-4 flex items-center justify-between text-white`}>
+                                <div className="flex items-center gap-3">
+                                    <AlertTriangle className="w-6 h-6 animate-pulse" />
+                                    <h3 className="font-black uppercase text-sm tracking-tight text-white">
+                                        {coincidenceAval.count >= coincidenceAval.limit ? 'Límite de Avales Alcanzado' : 'Persona ya registrada'}
+                                    </h3>
+                                </div>
+                                <button 
+                                    onClick={() => {
+                                        setAvalName('');
+                                        setCoincidenceAval(null);
+                                    }}
+                                    className="p-1 rounded-full hover:bg-black/20 transition-colors text-white"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
                             </div>
 
                             <div className="p-6 space-y-6">
-                                <div className="flex flex-col items-center">
-                                    <div className="w-20 h-20 bg-indigo-50 rounded-full flex items-center justify-center text-indigo-600 mb-4 border-4 border-white shadow-md">
-                                        <UserCheck className="w-10 h-10" />
+                                <div className="flex flex-col items-center text-center">
+                                    <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-3 border-2 border-indigo-100 shadow-sm">
+                                        <UserCheck className="w-8 h-8" />
                                     </div>
-                                    <h4 className="text-xl font-black text-slate-900 uppercase text-center leading-tight">
+                                    <h4 className="text-lg font-black text-slate-900 uppercase leading-tight">
                                         {avalName}
                                     </h4>
-                                    <div className="mt-2 flex flex-col items-center gap-1">
-                                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">
-                                            Vinculado actualmente a:
-                                        </span>
-                                        <div className="flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full border border-indigo-100">
-                                            <span className="text-[10px] font-black uppercase">
-                                                Sup: {allSupervisors.find(s => s.id === coincidenceAval.client.supervisorId)?.name || 'Desconocido'}
-                                            </span>
-                                        </div>
-                                    </div>
                                 </div>
 
-                                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3">
-                                    <p className="text-[10px] font-bold text-slate-600 text-center uppercase leading-tight">
-                                        {coincidenceAval.isAlreadyClient && (
-                                            <span className="block text-red-600 mb-2 border-b border-red-100 pb-2">¡ESTA PERSONA YA ES UN CLIENTE REGISTRADO! (LÍMITE DE PRÉSTAMOS ACTIVOS: {maxClientActiveLoans})</span>
+                                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3 text-center">
+                                    <p className="text-xs font-bold text-slate-700 leading-snug">
+                                        {coincidenceAval.count >= coincidenceAval.limit ? (
+                                            <>Esta persona ya alcanzó el límite de registros como aval (<span className="text-red-600 font-black">{coincidenceAval.count} de {coincidenceAval.limit}</span>). Por reglamento no puede ser aval de más clientes.</>
+                                        ) : (
+                                            <>Por reglamento, solo se permite <span className="text-indigo-600 font-black">1 Préstamo</span> y ser <span className="text-indigo-600 font-black">Aval de 2 clientes</span>. Esta persona ya tiene <span className="text-indigo-600 font-black">{coincidenceAval.count} registro(s)</span> como aval.</>
                                         )}
-                                        <span className="block text-indigo-600 font-black mb-1">REGLAMENTO MÁX: CLIENTE {maxClientActiveLoans} V. + AVAL (NO-CLIENTE) {maxAvalRegistrations} V. / (CLIENTE) {maxClientAsAval} V.</span>
-                                        {coincidenceAval.count >= coincidenceAval.limit
-                                            ? `ESTA PERSONA YA TIENE ${coincidenceAval.count} REGISTROS COMO AVAL. NO PUEDE SER VINCULADO MÁS VECES.`
-                                            : `ESTA PERSONA TIENE ${coincidenceAval.count} REGISTRO(S) COMO AVAL (LÍMITE MÁX: ${coincidenceAval.limit}).`
-                                        }
                                     </p>
 
-                                    {coincidenceAval.count < coincidenceAval.limit && (
-                                        <div className="pt-2 border-t border-slate-200">
-                                            <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Datos existentes:</p>
-                                            <div className="flex flex-col gap-1">
-                                                <span className="text-[11px] font-bold text-slate-700 uppercase flex items-center gap-2">
-                                                    <MapPin className="w-3 h-3 text-slate-400" /> {coincidenceAval.client.avalAddress}
-                                                </span>
-                                                <span className="text-[11px] font-bold text-slate-700 flex items-center gap-2">
-                                                    <Phone className="w-3 h-3 text-slate-400" /> {coincidenceAval.client.avalCellphone}
-                                                </span>
+                                    {/* Lista de clientes y supervisores a los que está vinculado como aval */}
+                                    {(() => {
+                                        const normalizedTyped = removeAccents(avalName.trim().toUpperCase());
+                                        const linkedClients = clients.filter(cl => {
+                                            if (cl.isArchived) return false;
+                                            const normalizedAvalName = removeAccents((cl.avalName || '').trim().toUpperCase());
+                                            return normalizedAvalName === normalizedTyped ||
+                                                cl.avales?.some(a => removeAccents((a.name || '').trim().toUpperCase()) === normalizedTyped);
+                                        });
+
+                                        if (linkedClients.length === 0) return null;
+
+                                        return (
+                                            <div className="pt-2 border-t border-slate-200/80 text-left space-y-2">
+                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">
+                                                    Actualmente es aval de:
+                                                </p>
+                                                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                                                    {linkedClients.map((cl, i) => {
+                                                        const fullSupName = allSupervisors.find(s => s.id === cl.supervisorId)?.name || 'S/S';
+                                                        const firstNameOnly = fullSupName.split('-')[0].trim().split(' ')[0];
+
+                                                        // Buscar última fecha (visita más reciente o fecha de registro)
+                                                        const clientVisits = visits.filter(v => v.clientId === cl.id);
+                                                        const lastVisitTs = clientVisits.length > 0 
+                                                            ? Math.max(...clientVisits.map(v => v.timestamp))
+                                                            : cl.registeredAt;
+                                                        
+                                                        const formattedDate = lastVisitTs 
+                                                            ? new Date(lastVisitTs).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: '2-digit' }).toUpperCase()
+                                                            : 'SIN FECHA';
+
+                                                        return (
+                                                            <div key={cl.id || i} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+                                                                <div className="flex items-start justify-between gap-2">
+                                                                    <div className="flex items-start gap-2 min-w-0">
+                                                                        <User className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+                                                                        <span className="font-black text-slate-900 text-xs uppercase leading-tight break-words">
+                                                                            {cl.name}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-[10px]">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <span className="text-slate-400 font-bold uppercase">Supervisora:</span>
+                                                                        <span className="font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 uppercase">
+                                                                            {firstNameOnly}
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1 text-slate-500 font-bold bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100 text-[9.5px]">
+                                                                        <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                                                        <span>{formattedDate}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                        </div>
+                                        );
+                                    })()}
+
+                                    {coincidenceAval.count < coincidenceAval.limit && (
+                                        <p className="text-xs font-black text-indigo-600 uppercase tracking-wide pt-1">
+                                            ¿Quieres reutilizar sus datos existentes?
+                                        </p>
                                     )}
                                 </div>
 
@@ -2487,7 +2648,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                 setAvalName('');
                                                 setCoincidenceAval(null);
                                             }}
-                                            className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all active:scale-95"
+                                            className="w-full py-3.5 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg transition-all active:scale-95"
                                         >
                                             Entendido / Cambiar Aval
                                         </button>
@@ -2498,22 +2659,22 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                     setAvalName('');
                                                     setCoincidenceAval(null);
                                                 }}
-                                                className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all active:scale-95"
+                                                className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-wider hover:bg-slate-200 transition-all active:scale-95"
                                             >
-                                                Ignorar
+                                                Cerrar
                                             </button>
                                             <button
                                                 onClick={() => {
                                                     setAvalAddress(coincidenceAval.client.avalAddress || '');
                                                     setAvalCellphone(coincidenceAval.client.avalCellphone || '');
-                                                    const currentName = avalName.trim().toUpperCase();
+                                                    const currentName = removeAccents(avalName.trim().toUpperCase());
                                                     if (currentName) setIgnoredAvalNames(prev => [...prev, currentName]);
                                                     setCoincidenceAval(null);
                                                 }}
-                                                className="flex-2 py-4 bg-indigo-600 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all active:scale-95"
+                                                className="flex-1 py-3.5 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all active:scale-95"
                                             >
-                                                <UserCheck className="w-3.5 h-3.5" />
-                                                Tomar Datos
+                                                <UserCheck className="w-4 h-4" />
+                                                Reutilizar
                                             </button>
                                         </>
                                     )}
@@ -2523,6 +2684,132 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* MODAL DE CONFIRMACIÓN DE CUMPLEAÑOS DEL SUPERVISOR */}
+            <AnimatePresence>
+                {showBirthdayModal && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[200] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.9, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.9, y: 20 }}
+                            className="bg-white rounded-[2.5rem] shadow-2xl w-full max-w-sm overflow-hidden border border-indigo-100"
+                        >
+                            <div className="bg-gradient-to-br from-indigo-600 to-purple-600 p-6 flex flex-col items-center text-white text-center relative">
+                                <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center mb-3 backdrop-blur-md shadow-inner">
+                                    <Calendar className="w-9 h-9 text-white" />
+                                </div>
+                                <h3 className="text-lg font-black uppercase tracking-tight leading-snug">
+                                    ¡Confirma tu Cumpleaños! 🎂
+                                </h3>
+                                <p className="text-[11px] font-medium opacity-90 leading-tight mt-1">
+                                    Por favor registra el día y mes de tu cumpleaños.
+                                </p>
+                            </div>
+
+                            <div className="p-6 space-y-5">
+                                <div className="space-y-3">
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Día</label>
+                                            <select
+                                                value={bDayInput}
+                                                onChange={e => setBDayInput(e.target.value)}
+                                                className="w-full p-3.5 border border-slate-200 bg-slate-50 text-slate-900 rounded-2xl text-xs font-bold uppercase focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            >
+                                                <option value="">Seleccionar...</option>
+                                                {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                                                    <option key={d} value={d}>{d}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Mes</label>
+                                            <select
+                                                value={bMonthInput}
+                                                onChange={e => setBMonthInput(e.target.value)}
+                                                className="w-full p-3.5 border border-slate-200 bg-slate-50 text-slate-900 rounded-2xl text-xs font-bold uppercase focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            >
+                                                <option value="">Seleccionar...</option>
+                                                {['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map((m, idx) => (
+                                                    <option key={idx + 1} value={idx + 1}>{m}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3 pt-2">
+                                    <button
+                                        onClick={() => setShowBirthdayModal(false)}
+                                        className="flex-1 py-3.5 bg-slate-100 text-slate-500 rounded-2xl font-black uppercase text-xs tracking-wider hover:bg-slate-200 transition-all active:scale-95"
+                                    >
+                                        Omitir
+                                    </button>
+                                    <button
+                                        disabled={!bDayInput || !bMonthInput || isSavingBirthday}
+                                        onClick={async () => {
+                                            if (!bDayInput || !bMonthInput) return;
+                                            setIsSavingBirthday(true);
+                                            try {
+                                                if (onUpdateSupervisorSelf) {
+                                                    await onUpdateSupervisorSelf(supervisor.id, {
+                                                        birthDay: parseInt(bDayInput),
+                                                        birthMonth: parseInt(bMonthInput)
+                                                    });
+                                                }
+                                                setShowBirthdayModal(false);
+                                            } catch (err) {
+                                                console.error("Error guardando cumpleaños:", err);
+                                                alert("Error al guardar cumpleaños");
+                                            } finally {
+                                                setIsSavingBirthday(false);
+                                            }
+                                        }}
+                                        className={`flex-1 py-3.5 rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg flex items-center justify-center gap-1.5 transition-all ${
+                                            bDayInput && bMonthInput && !isSavingBirthday
+                                                ? 'bg-indigo-600 text-white hover:bg-indigo-700 active:scale-95 shadow-indigo-100'
+                                                : 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                                        }`}
+                                    >
+                                        {isSavingBirthday ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Guardar'}
+                                    </button>
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* MODAL DE CUMPLEAÑOS PANTALLA COMPLETA SIN BOTONES (POR TIEMPO) */}
+            {showCelebrationModal && (
+                <div className="fixed inset-0 z-[300] flex flex-col items-center justify-center bg-black/90 p-4 backdrop-blur-md select-none">
+                    <div className="w-full max-w-lg flex flex-col items-center text-center space-y-6">
+                        <h1 className="text-4xl sm:text-5xl font-black text-amber-400 tracking-tight uppercase drop-shadow-lg animate-pulse">
+                            ¡FELICIDADES!
+                        </h1>
+
+                        {settings?.birthdayPetUrl ? (
+                            <div className="w-full max-h-[65vh] rounded-3xl overflow-hidden bg-white/5 border border-amber-400/30 p-3 shadow-2xl flex items-center justify-center">
+                                <img
+                                    src={settings.birthdayPetUrl}
+                                    alt="FELICIDADES"
+                                    className="w-full h-full max-h-[60vh] object-contain rounded-2xl"
+                                />
+                            </div>
+                        ) : (
+                            <div className="w-64 h-64 rounded-full bg-amber-400/20 border-4 border-amber-400/60 flex items-center justify-center">
+                                <span className="text-9xl">🎂</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* MODAL DE ERROR DE REGISTRO */}
             <AnimatePresence>

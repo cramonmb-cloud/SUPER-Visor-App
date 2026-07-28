@@ -19,11 +19,11 @@ interface AdminPanelV2Props {
   isViewer?: boolean;
   viewerCanCreateSups?: boolean;
   viewerCanManageWeeks?: boolean;
-  onAddSupervisor: (name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string) => void;
-  onUpdateSupervisor: (id: string, name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string) => void;
+  onAddSupervisor: (name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string, birthDay?: number, birthMonth?: number) => void;
+  onUpdateSupervisor: (id: string, name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string, birthDay?: number, birthMonth?: number) => void;
   onGenerateQR: (count: number, prefix: string, financieraId: string) => void;
   onDeleteSupervisor: (id: string) => void;
-  onUpdateSettings: (prefix: string, nextSeq: string, appName: string, rules?: RegistrationRules, verName?: string, verColor?: string, logoUrl?: string, designVersion?: 'v1' | 'v2', logoGifUrl?: string, footerLogoUrl?: string, footerInfoHtml?: string) => void;
+  onUpdateSettings: (prefix: string, nextSeq: string, appName: string, rules?: RegistrationRules, verName?: string, verColor?: string, logoUrl?: string, designVersion?: 'v1' | 'v2', logoGifUrl?: string, footerLogoUrl?: string, footerInfoHtml?: string, birthdayPetUrl?: string, birthdayDurationSeconds?: number) => void;
   onUpdateClient: (clientId: string, data: Partial<Client>) => void;
   onDeleteClient: (clientId: string) => void;
   onFetchClient: (clientId: string) => Promise<Client | null>;

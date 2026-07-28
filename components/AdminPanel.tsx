@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Supervisor, Client, Visit, QRCodeBatch, AppState, SystemUser, RegistrationRules, DeviceMetadata, WorkWeek, Guarantee, Financiera, UserRole, GuarantorRange, Guarantor, ApiPermission, ApiKey } from '../types';
-import { Users, User, QrCode, MapPin, Plus, RefreshCw, Trash2, Printer, FileText, Settings, Save, Archive, Camera, Shield, UserPlus, UserCheck, Pencil, X, Map as MapIcon, Filter, Eye, ImageIcon, Globe, Home, Calendar, PlayCircle, StopCircle, Clock, CheckCircle, Palette, Info, Monitor, Cpu, HardDrive, Smartphone, AlertTriangle, ArrowRight, ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, DollarSign, Download, FileJson, Hash, Loader2, Image as ImageIconLucide, Zap, Activity, History, UserCog, CheckSquare, Square, Search, RotateCcw, Terminal, Key, Fingerprint, ChevronLeft, ChevronRight, Building2, LayoutGrid } from 'lucide-react';
+import { Users, User, QrCode, MapPin, Plus, RefreshCw, Trash2, Printer, FileText, Settings, Save, Archive, Camera, Shield, UserPlus, UserCheck, Pencil, X, Map as MapIcon, Filter, Eye, ImageIcon, Globe, Home, Calendar, PlayCircle, StopCircle, Clock, CheckCircle, Palette, Info, Monitor, Cpu, HardDrive, Smartphone, AlertTriangle, ArrowRight, ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, DollarSign, Download, FileJson, Hash, Loader2, Image as ImageIconLucide, Zap, Activity, History, UserCog, CheckSquare, Square, Search, RotateCcw, Terminal, Key, Fingerprint, ChevronLeft, ChevronRight, Building2, LayoutGrid, Sparkles } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import QRCode from "qrcode";
@@ -16,11 +16,11 @@ interface AdminPanelProps {
   isViewer?: boolean;
   viewerCanCreateSups?: boolean;
   viewerCanManageWeeks?: boolean;
-  onAddSupervisor: (name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string) => void;
-  onUpdateSupervisor: (id: string, name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string) => void;
+  onAddSupervisor: (name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string, birthDay?: number, birthMonth?: number) => void;
+  onUpdateSupervisor: (id: string, name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string, birthDay?: number, birthMonth?: number) => void;
   onGenerateQR: (count: number, prefix: string, financieraId: string) => void;
   onDeleteSupervisor: (id: string) => void;
-  onUpdateSettings: (prefix: string, nextSeq: string, appName: string, rules?: RegistrationRules, verName?: string, verColor?: string, logoUrl?: string, designVersion?: 'v1' | 'v2', logoGifUrl?: string, footerLogoUrl?: string, footerInfoHtml?: string) => void;
+  onUpdateSettings: (prefix: string, nextSeq: string, appName: string, rules?: RegistrationRules, verName?: string, verColor?: string, logoUrl?: string, designVersion?: 'v1' | 'v2', logoGifUrl?: string, footerLogoUrl?: string, footerInfoHtml?: string, birthdayPetUrl?: string, birthdayDurationSeconds?: number) => void;
   onUpdateClient: (clientId: string, data: Partial<Client>) => void;
   onDeleteClient: (clientId: string) => void;
   onFetchClient: (clientId: string) => Promise<Client | null>;
@@ -169,6 +169,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [versionColor, setVersionColor] = useState(data.settings?.versionColor || '#4f46e5');
   const [footerLogoUrl, setFooterLogoUrl] = useState(data.settings?.footerLogoUrl || '');
   const [footerInfoHtml, setFooterInfoHtml] = useState(data.settings?.footerInfoHtml || '');
+  const [birthdayPetUrl, setBirthdayPetUrl] = useState(data.settings?.birthdayPetUrl || '');
+  const [birthdayDurationSeconds, setBirthdayDurationSeconds] = useState<number>(data.settings?.birthdayDurationSeconds ?? 5);
   const [designVersion, setDesignVersion] = useState<'v1' | 'v2'>(data.settings?.adminDesignVersion || 'v1');
   const [reqFacade, setReqFacade] = useState(data.settings?.registrationRules?.requireFacade ?? true);
   const [minGuarantees, setMinGuarantees] = useState(data.settings?.registrationRules?.minGuarantees ?? (data.settings?.registrationRules?.requireGuarantee ? 1 : 0));
@@ -180,6 +182,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [supCanArchive, setSupCanArchive] = useState(false);
   const [supCanEditPhotos, setSupCanEditPhotos] = useState(false);
   const [supFinId, setSupFinId] = useState('');
+  const [supBirthDay, setSupBirthDay] = useState<string>('');
+  const [supBirthMonth, setSupBirthMonth] = useState<string>('');
   const [editingSup, setEditingSup] = useState<Supervisor | null>(null);
 
   // System User Form State
@@ -594,13 +598,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         setDesignVersion(data.settings.adminDesignVersion || 'v1');
         setFooterLogoUrl(data.settings.footerLogoUrl || '');
         setFooterInfoHtml(data.settings.footerInfoHtml || '');
+        setBirthdayPetUrl(data.settings.birthdayPetUrl || '');
+        setBirthdayDurationSeconds(data.settings.birthdayDurationSeconds ?? 5);
         setReqFacade(data.settings.registrationRules?.requireFacade ?? true);
         setMinGuarantees(data.settings.registrationRules?.minGuarantees ?? (data.settings.registrationRules?.requireGuarantee ? 1 : 0));
     }
   }, [data.settings]);
 
   const handleSaveSettings = () => {
-    onUpdateSettings(prefix, sequence, appName, { requireFacade: reqFacade, requireGuarantee: minGuarantees > 0, minGuarantees }, versionName, versionColor, logoUrl, designVersion, logoGifUrl, footerLogoUrl, footerInfoHtml);
+    onUpdateSettings(prefix, sequence, appName, { requireFacade: reqFacade, requireGuarantee: minGuarantees > 0, minGuarantees }, versionName, versionColor, logoUrl, designVersion, logoGifUrl, footerLogoUrl, footerInfoHtml, birthdayPetUrl, birthdayDurationSeconds);
     alert("Ajustes globales actualizados. La PWA se actualizará en unos instantes.");
   };
 
@@ -715,13 +721,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           alert("Complete nombre, PIN y seleccione una financiera.");
           return;
       }
+      const bDay = supBirthDay ? parseInt(supBirthDay) : undefined;
+      const bMonth = supBirthMonth ? parseInt(supBirthMonth) : undefined;
       if (editingSup) {
-          onUpdateSupervisor(editingSup.id, supName, supPin, supCanEdit, supCanArchive, supCanEditPhotos, supFinId);
+          onUpdateSupervisor(editingSup.id, supName, supPin, supCanEdit, supCanArchive, supCanEditPhotos, supFinId, bDay, bMonth);
           setEditingSup(null);
       } else {
-          onAddSupervisor(supName, supPin, supCanEdit, supCanArchive, supCanEditPhotos, supFinId);
+          onAddSupervisor(supName, supPin, supCanEdit, supCanArchive, supCanEditPhotos, supFinId, bDay, bMonth);
       }
-      setSupName(''); setSupPin(''); setSupCanEdit(false); setSupCanArchive(false); setSupCanEditPhotos(false); setSupFinId('');
+      setSupName(''); setSupPin(''); setSupCanEdit(false); setSupCanArchive(false); setSupCanEditPhotos(false); setSupFinId(''); setSupBirthDay(''); setSupBirthMonth('');
   };
 
   const startEditSup = (sup: Supervisor) => {
@@ -732,6 +740,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setSupCanArchive(sup.canArchiveClients || false);
       setSupCanEditPhotos(sup.canEditPhotos || false);
       setSupFinId(sup.financieraId || '');
+      setSupBirthDay(sup.birthDay ? String(sup.birthDay) : '');
+      setSupBirthMonth(sup.birthMonth ? String(sup.birthMonth) : '');
       setShowSupModal(true);
   };
 
@@ -743,6 +753,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setSupCanArchive(false);
       setSupCanEditPhotos(false);
       setSupFinId('');
+      setSupBirthDay('');
+      setSupBirthMonth('');
   };
 
   const toggleSupervisorSelection = (id: string) => {
@@ -1375,6 +1387,35 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                             </select>
                                         </div>
                                     </div>
+
+                                    {/* CAMPO DE CUMPLEAÑOS (DÍA Y MES) */}
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1 flex items-center gap-1.5">
+                                            <Calendar className="w-3.5 h-3.5 text-indigo-500" /> Fecha de Cumpleaños (Opcional)
+                                        </label>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <select
+                                                value={supBirthDay}
+                                                onChange={e => setSupBirthDay(e.target.value)}
+                                                className="w-full p-3.5 border border-slate-200 bg-slate-50 text-slate-900 rounded-2xl text-xs font-bold uppercase focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            >
+                                                <option value="">Día...</option>
+                                                {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                                                    <option key={d} value={d}>{d}</option>
+                                                ))}
+                                            </select>
+                                            <select
+                                                value={supBirthMonth}
+                                                onChange={e => setSupBirthMonth(e.target.value)}
+                                                className="w-full p-3.5 border border-slate-200 bg-slate-50 text-slate-900 rounded-2xl text-xs font-bold uppercase focus:ring-2 focus:ring-indigo-500 outline-none"
+                                            >
+                                                <option value="">Mes...</option>
+                                                {['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'].map((m, idx) => (
+                                                    <option key={idx + 1} value={idx + 1}>{m}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
                                     <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
                                         <label className="flex items-center gap-3 cursor-pointer group">
                                             <div className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${supCanEdit ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-200 group-hover:border-indigo-300'}`}>
@@ -1571,6 +1612,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 </th>
                                 <th className="py-4 px-4">Nombre</th>
                                 <th className="py-4 px-4">Financiera</th>
+                                <th className="py-4 px-4 text-center">Cumpleaños</th>
                                 <th className="py-4 px-4 text-center">PIN</th>
                                 <th className="py-4 px-4 text-center">Permisos</th>
                                 <th className="py-4 px-4 text-center">Auditoría</th>
@@ -1608,6 +1650,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                             </div>
                                         </td>
                                         <td className="py-4 px-4 font-bold text-indigo-600 text-[10px] uppercase">{finName}</td>
+                                        <td className="py-4 px-4 text-center font-bold text-slate-700 text-xs">
+                                            {sup.birthDay && sup.birthMonth ? (
+                                                <span className="px-2.5 py-1 bg-amber-50 text-amber-700 rounded-lg border border-amber-200/80 font-mono">
+                                                    {String(sup.birthDay).padStart(2, '0')}-{String(sup.birthMonth).padStart(2, '0')}
+                                                </span>
+                                            ) : (
+                                                <span className="text-slate-300 font-normal">-</span>
+                                            )}
+                                        </td>
                                         <td className="py-4 px-4 text-center font-mono font-bold text-slate-900">{isSuperAdmin || isViewer ? sup.pin : '****'}</td>
                                         <td className="py-4 px-4 text-center">
                                             {sup.canEditClients ? (
@@ -2715,6 +2766,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                         placeholder="Contenido que aparecerá al dar clic en el logo del footer..." 
                                                         className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all min-h-[120px]" 
                                                     />
+                                                </div>
+                                                <div className="pt-2 grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                    <div className="space-y-1 md:col-span-2">
+                                                        <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest px-1 flex items-center gap-1.5">
+                                                            <Sparkles className="w-3.5 h-3.5" /> URL Mascota Cumpleaños
+                                                        </label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={birthdayPetUrl} 
+                                                            onChange={e => setBirthdayPetUrl(e.target.value)} 
+                                                            placeholder="https://ejemplo.com/mascota-cumpleanos.png" 
+                                                            className="w-full p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs" 
+                                                        />
+                                                    </div>
+                                                    <div className="space-y-1">
+                                                        <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest px-1 flex items-center gap-1.5">
+                                                            <Clock className="w-3.5 h-3.5" /> Tiempo (Segundos)
+                                                        </label>
+                                                        <input 
+                                                            type="number" 
+                                                            min="1"
+                                                            max="60"
+                                                            value={birthdayDurationSeconds} 
+                                                            onChange={e => setBirthdayDurationSeconds(parseInt(e.target.value) || 5)} 
+                                                            placeholder="5" 
+                                                            className="w-full p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs text-center" 
+                                                        />
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>

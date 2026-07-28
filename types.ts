@@ -33,6 +33,8 @@ export interface Supervisor {
   canArchiveClients?: boolean; // NEW: Permission to archive clients
   canEditPhotos?: boolean; // NEW: Permission to edit client/aval photos
   financieraId?: string; // NEW: Link to Financiera
+  birthDay?: number; // NEW: Day of birthday (1-31)
+  birthMonth?: number; // NEW: Month of birthday (1-12)
 }
 
 export interface SystemUser {
@@ -171,6 +173,8 @@ export interface SystemSettings {
   adminDesignVersion?: 'v1' | 'v2'; // NEW: Template version for Admin Panel
   footerLogoUrl?: string; // NEW
   footerInfoHtml?: string; // NEW
+  birthdayPetUrl?: string; // NEW: Image URL for birthday mascot / congratulation banner
+  birthdayDurationSeconds?: number; // NEW: Duration in seconds to display birthday modal before auto-dismissing
 }
 
 export enum ApiPermission {
