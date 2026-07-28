@@ -2788,7 +2788,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
             {/* MODAL DE CUMPLEAÑOS PANTALLA COMPLETA SIN BOTONES (POR TIEMPO) */}
             {showCelebrationModal && (() => {
-                const supFin = data.financieras.find(f => f.id === supervisor.financieraId);
+                const supFin = financieras.find(f => f.id === supervisor.financieraId);
                 const mascotUrl = supFin?.birthdayPetUrl || settings?.birthdayPetUrl;
 
                 return (
