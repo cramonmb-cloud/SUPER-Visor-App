@@ -165,7 +165,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [appName, setAppName] = useState(data.settings?.appName || 'SUPER VisorApp');
   const [logoUrl, setLogoUrl] = useState(data.settings?.logoUrl || '');
   const [logoGifUrl, setLogoGifUrl] = useState(data.settings?.logoGifUrl || '');
-  const [versionName, setVersionName] = useState(data.settings?.versionName || 'SISTEMA V1.0');
+  const [versionName, setVersionName] = useState(data.settings?.versionName || 'v5.01');
   const [versionColor, setVersionColor] = useState(data.settings?.versionColor || '#4f46e5');
   const [footerLogoUrl, setFooterLogoUrl] = useState(data.settings?.footerLogoUrl || '');
   const [footerInfoHtml, setFooterInfoHtml] = useState(data.settings?.footerInfoHtml || '');
@@ -593,7 +593,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         setAppName(data.settings.appName || 'SUPER VisorApp');
         setLogoUrl(data.settings.logoUrl || '');
         setLogoGifUrl(data.settings.logoGifUrl || '');
-        setVersionName(data.settings.versionName || 'SISTEMA V1.0');
+        setVersionName(data.settings.versionName || 'v5.01');
         setVersionColor(data.settings.versionColor || '#4f46e5');
         setDesignVersion(data.settings.adminDesignVersion || 'v1');
         setFooterLogoUrl(data.settings.footerLogoUrl || '');

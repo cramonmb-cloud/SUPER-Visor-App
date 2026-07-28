@@ -40,7 +40,7 @@ const INITIAL_STATE: AppState = {
       nextSequence: '100000', 
       appName: 'SUPER VisorApp', 
       logoUrl: '',
-      versionName: 'SISTEMA V1.0',
+      versionName: 'v5.01',
       versionColor: '#4f46e5',
       registrationRules: { requireFacade: true, requireGuarantee: true },
       footerLogoUrl: '',
