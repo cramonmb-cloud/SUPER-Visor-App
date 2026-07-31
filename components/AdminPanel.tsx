@@ -384,14 +384,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         // 3. Filtro por Semana/Ciclo
         if (filterWeekId !== 'ALL') {
             if (filterWeekId === 'CURRENT') {
-                const clientWeek = data.weeks.find(w => w.id === c.weekId);
-                if (clientWeek) {
-                    if (!clientWeek.isActive) return false;
+                const latestActiveWeek = data.weeks
+                    .filter(w => w.isActive && w.financieraId === c.financieraId)
+                    .sort((a, b) => b.startDate - a.startDate)[0];
+                if (!latestActiveWeek) return false;
+                if (c.weekId) {
+                    if (c.weekId !== latestActiveWeek.id) return false;
                 } else {
-                    const activeWeek = data.weeks.find(w => w.isActive && w.financieraId === c.financieraId);
-                    if (!activeWeek) return false;
-                    const end = activeWeek.endDate || (activeWeek.startDate + 7 * 24 * 60 * 60 * 1000);
-                    if (c.registeredAt < activeWeek.startDate || c.registeredAt > end) return false;
+                    const end = latestActiveWeek.endDate || (latestActiveWeek.startDate + 7 * 24 * 60 * 60 * 1000);
+                    if (c.registeredAt < latestActiveWeek.startDate || c.registeredAt > end) return false;
                 }
             } else {
                 if (c.weekId) {
@@ -509,17 +510,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       if (filterWeekId === 'ALL') return true;
       
       if (filterWeekId === 'CURRENT') {
-          // Buscamos la semana asociada al cliente
-          const clientWeek = data.weeks.find(w => w.id === c.weekId);
-          if (clientWeek) {
-              return clientWeek.isActive;
+          const latestActiveWeek = data.weeks
+              .filter(w => w.isActive && w.financieraId === c.financieraId)
+              .sort((a, b) => b.startDate - a.startDate)[0];
+          if (!latestActiveWeek) return false;
+          if (c.weekId) {
+              return c.weekId === latestActiveWeek.id;
           } else {
-              // Fallback para datos antiguos sin weekId
-              // Buscamos si hay alguna semana activa para la financiera del cliente
-              const activeWeek = data.weeks.find(w => w.isActive && w.financieraId === c.financieraId);
-              if (!activeWeek) return false;
-              const end = activeWeek.endDate || (activeWeek.startDate + 7 * 24 * 60 * 60 * 1000);
-              return c.registeredAt >= activeWeek.startDate && c.registeredAt <= end;
+              const end = latestActiveWeek.endDate || (latestActiveWeek.startDate + 7 * 24 * 60 * 60 * 1000);
+              return c.registeredAt >= latestActiveWeek.startDate && c.registeredAt <= end;
           }
       } else {
           // Filtro por una semana específica
@@ -578,8 +577,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       if (filterWeekId === 'ALL') return true;
       
       if (filterWeekId === 'CURRENT') {
-          const visitWeek = data.weeks.find(w => w.id === v.weekId);
-          return visitWeek ? visitWeek.isActive : false;
+          const latestActiveWeek = data.weeks
+              .filter(w => w.isActive && w.financieraId === (v.financieraId || filterFinancieraId))
+              .sort((a, b) => b.startDate - a.startDate)[0];
+          if (!latestActiveWeek) {
+              const visitWeek = data.weeks.find(w => w.id === v.weekId);
+              return visitWeek ? visitWeek.isActive : false;
+          }
+          return v.weekId === latestActiveWeek.id;
       } else {
           return v.weekId === filterWeekId;
       }
