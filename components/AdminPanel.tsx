@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Supervisor, Client, Visit, QRCodeBatch, AppState, SystemUser, RegistrationRules, DeviceMetadata, WorkWeek, Guarantee, Financiera, UserRole, GuarantorRange, Guarantor, ApiPermission, ApiKey } from '../types';
-import { Users, User, QrCode, MapPin, Plus, RefreshCw, Trash2, Printer, FileText, Settings, Save, Archive, Camera, Shield, UserPlus, UserCheck, Pencil, X, Map as MapIcon, Filter, Eye, ImageIcon, Globe, Home, Calendar, PlayCircle, StopCircle, Clock, CheckCircle, Palette, Info, Monitor, Cpu, HardDrive, Smartphone, AlertTriangle, ArrowRight, ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, DollarSign, Download, FileJson, Hash, Loader2, Image as ImageIconLucide, Zap, Activity, History, UserCog, CheckSquare, Square, Search, RotateCcw, Terminal, Key, Fingerprint, ChevronLeft, ChevronRight, Building2, LayoutGrid, Sparkles } from 'lucide-react';
+import { Users, User, QrCode, MapPin, Plus, RefreshCw, Trash2, Printer, FileText, Settings, Save, Archive, Camera, Shield, UserPlus, UserCheck, Pencil, X, Map as MapIcon, Filter, Eye, ImageIcon, Globe, Home, Calendar, PlayCircle, StopCircle, Clock, CheckCircle, Palette, Info, Monitor, Cpu, HardDrive, Smartphone, AlertTriangle, ArrowRight, ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, DollarSign, Download, FileJson, Hash, Loader2, Image as ImageIconLucide, Zap, Activity, History, UserCog, CheckSquare, Square, Search, RotateCcw, Terminal, Key, Fingerprint, ChevronLeft, ChevronRight, Building2, LayoutGrid, Sparkles, UserMinus, Unlink } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import QRCode from "qrcode";
@@ -253,6 +253,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [bulkFinId, setBulkFinId] = useState('');
   const [bulkCanEdit, setBulkCanEdit] = useState<boolean | null>(null);
   const [bulkCanArchive, setBulkCanArchive] = useState<boolean | null>(null);
+
+  // Guarantor Edit State
+  const [editingGuarantor, setEditingGuarantor] = useState<{
+    originalName: string;
+    name: string;
+    address: string;
+    cellphone: string;
+  } | null>(null);
 
   // API Key Form State
   const [apiKeyName, setApiKeyName] = useState('');
@@ -697,6 +705,128 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setIsEditingClient(false);
       alert("Cliente actualizado correctamente.");
   };
+
+  const handleUnlinkClientFromGuarantor = async (clientId: string, avalName: string) => {
+    const client = data.clients.find(c => c.id === clientId);
+    if (!client) return;
+
+    if (!confirm(`¿Estás seguro de que deseas desvincular a "${client.name}" del aval "${avalName}"?`)) {
+      return;
+    }
+
+    const updates: Partial<Client> = {};
+    const targetNameUpper = avalName.trim().toUpperCase();
+    let modified = false;
+
+    if (client.avalName && client.avalName.trim().toUpperCase() === targetNameUpper) {
+      updates.avalName = '';
+      updates.avalAddress = '';
+      updates.avalCellphone = '';
+      updates.avalFacadeUrl = '';
+      updates.avalPhotoUrl = '';
+      updates.avalLatitude = undefined;
+      updates.avalLongitude = undefined;
+      updates.avalVisitTimestamp = undefined;
+      modified = true;
+    }
+
+    if (client.avales && client.avales.length > 0) {
+      const updatedAvales = client.avales.filter(a => a.name && a.name.trim().toUpperCase() !== targetNameUpper);
+      if (updatedAvales.length !== client.avales.length) {
+        updates.avales = updatedAvales;
+        modified = true;
+      }
+    }
+
+    if (modified) {
+      await onUpdateClient(clientId, updates);
+    }
+  };
+
+  const handleDeleteGuarantor = async (guarantorName: string, linkedClients: { id: string; name: string }[]) => {
+    if (!confirm(`¿Estás seguro de que deseas eliminar al aval "${guarantorName}"?\nEsta acción desvinculará a los ${linkedClients.length} cliente(s) respaldados.`)) {
+      return;
+    }
+
+    const targetNameUpper = guarantorName.trim().toUpperCase();
+
+    const affectedClients = data.clients.filter(client => {
+      const matchesLegacy = client.avalName && client.avalName.trim().toUpperCase() === targetNameUpper;
+      const matchesArray = client.avales && client.avales.some(a => a.name && a.name.trim().toUpperCase() === targetNameUpper);
+      return matchesLegacy || matchesArray;
+    });
+
+    for (const client of affectedClients) {
+      const updates: Partial<Client> = {};
+
+      if (client.avalName && client.avalName.trim().toUpperCase() === targetNameUpper) {
+        updates.avalName = '';
+        updates.avalAddress = '';
+        updates.avalCellphone = '';
+        updates.avalFacadeUrl = '';
+        updates.avalPhotoUrl = '';
+        updates.avalLatitude = undefined;
+        updates.avalLongitude = undefined;
+        updates.avalVisitTimestamp = undefined;
+      }
+
+      if (client.avales && client.avales.length > 0) {
+        updates.avales = client.avales.filter(a => a.name && a.name.trim().toUpperCase() !== targetNameUpper);
+      }
+
+      await onUpdateClient(client.id, updates);
+    }
+  };
+
+  const handleSaveEditGuarantor = async () => {
+    if (!editingGuarantor) return;
+    const { originalName, name, address, cellphone } = editingGuarantor;
+
+    if (!name.trim()) {
+      alert("El nombre del aval es requerido.");
+      return;
+    }
+
+    const origUpper = originalName.trim().toUpperCase();
+    const newNameUpper = name.trim().toUpperCase();
+    const newAddressUpper = address.trim().toUpperCase();
+    const newPhone = cellphone.trim();
+
+    const affectedClients = data.clients.filter(client => {
+      const matchesLegacy = client.avalName && client.avalName.trim().toUpperCase() === origUpper;
+      const matchesArray = client.avales && client.avales.some(a => a.name && a.name.trim().toUpperCase() === origUpper);
+      return matchesLegacy || matchesArray;
+    });
+
+    for (const client of affectedClients) {
+      const updates: Partial<Client> = {};
+
+      if (client.avalName && client.avalName.trim().toUpperCase() === origUpper) {
+        updates.avalName = newNameUpper;
+        updates.avalAddress = newAddressUpper;
+        updates.avalCellphone = newPhone;
+      }
+
+      if (client.avales && client.avales.length > 0) {
+        updates.avales = client.avales.map(a => {
+          if (a.name && a.name.trim().toUpperCase() === origUpper) {
+            return {
+              ...a,
+              name: newNameUpper,
+              address: newAddressUpper,
+              cellphone: newPhone,
+            };
+          }
+          return a;
+        });
+      }
+
+      await onUpdateClient(client.id, updates);
+    }
+
+    setEditingGuarantor(null);
+  };
+
 
   const handleAddGuarantee = () => {
       if (!newGuaranteeDesc.trim()) return;
@@ -2332,6 +2462,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 <th className="py-4 px-6 border-b border-slate-800">Crédito Vinculado</th>
                                 <th className="py-4 px-6 border-b border-slate-800 text-center">Clientes Respaldados</th>
                                 <th className="py-4 px-6 border-b border-slate-800 text-center">Estado</th>
+                                <th className="py-4 px-6 border-b border-slate-800 text-center">Acciones</th>
                             </tr>
                         </thead>
                         <tbody className="text-xs divide-y divide-slate-200 bg-white">
@@ -2397,27 +2528,38 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                     <td className="py-4 px-6">
                                         <div className="flex flex-col gap-2">
                                             {guarantor.clients.map((c, i) => (
-                                                <button 
-                                                    key={i}
-                                                    onClick={() => {
-                                                        const cl = data.clients.find(cli => cli.id === c.id);
-                                                        if (cl) setSelectedClientForDetails(cl);
-                                                    }}
-                                                    className="flex items-center gap-2.5 group/cli hover:bg-slate-100 p-1.5 px-3 rounded-xl transition-all text-left w-full border border-transparent hover:border-slate-200 shadow-sm hover:shadow-md bg-white/50"
-                                                >
-                                                    <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-[9px] font-black group-hover/cli:bg-indigo-600 group-hover/cli:text-white transition-colors border border-indigo-100">
-                                                        {c.name.charAt(0)}
-                                                    </div>
-                                                    <div className="flex flex-col overflow-hidden">
-                                                        <span className="text-[10px] font-black text-slate-700 uppercase group-hover/cli:text-indigo-600 truncate">
-                                                            {c.name}
-                                                        </span>
-                                                        <span className="text-[8px] text-slate-400 font-bold flex items-center gap-1">
-                                                            <Hash className="w-2.5 h-2.5"/> {c.id}
-                                                        </span>
-                                                    </div>
-                                                    <ArrowRight className="w-3 h-3 text-slate-300 ml-auto group-hover/cli:text-indigo-600 group-hover/cli:translate-x-1 transition-all" />
-                                                </button>
+                                                <div key={i} className="flex items-center gap-1.5 w-full">
+                                                    <button 
+                                                        onClick={() => {
+                                                            const cl = data.clients.find(cli => cli.id === c.id);
+                                                            if (cl) setSelectedClientForDetails(cl);
+                                                        }}
+                                                        className="flex-1 flex items-center gap-2.5 group/cli hover:bg-slate-100 p-1.5 px-3 rounded-xl transition-all text-left border border-transparent hover:border-slate-200 shadow-sm hover:shadow-md bg-white/50 overflow-hidden"
+                                                    >
+                                                        <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-[9px] font-black group-hover/cli:bg-indigo-600 group-hover/cli:text-white transition-colors border border-indigo-100 flex-shrink-0">
+                                                            {c.name.charAt(0)}
+                                                        </div>
+                                                        <div className="flex flex-col overflow-hidden">
+                                                            <span className="text-[10px] font-black text-slate-700 uppercase group-hover/cli:text-indigo-600 truncate">
+                                                                {c.name}
+                                                            </span>
+                                                            <span className="text-[8px] text-slate-400 font-bold flex items-center gap-1">
+                                                                <Hash className="w-2.5 h-2.5"/> {c.id}
+                                                            </span>
+                                                        </div>
+                                                        <ArrowRight className="w-3 h-3 text-slate-300 ml-auto group-hover/cli:text-indigo-600 group-hover/cli:translate-x-1 transition-all flex-shrink-0" />
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleUnlinkClientFromGuarantor(c.id, guarantor.name);
+                                                        }}
+                                                        className="p-2 text-rose-500 bg-rose-50 rounded-xl hover:bg-rose-600 hover:text-white transition-all shadow-sm flex-shrink-0"
+                                                        title={`Desvincular a ${c.name} de este aval`}
+                                                    >
+                                                        <UserMinus className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </div>
                                             ))}
                                             {guarantor.clients.length === 0 && (
                                                 <span className="text-[9px] text-slate-300 italic">SIN VINCULACIONES</span>
@@ -2435,11 +2577,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                             </span>
                                         )}
                                     </td>
+                                    <td className="py-4 px-6 text-center">
+                                        <div className="flex items-center justify-center gap-2">
+                                            <button 
+                                                onClick={() => setEditingGuarantor({
+                                                    originalName: guarantor.name,
+                                                    name: guarantor.name,
+                                                    address: guarantor.address || '',
+                                                    cellphone: guarantor.cellphone || ''
+                                                })}
+                                                className="p-2 text-amber-600 bg-amber-50 rounded-xl hover:bg-amber-600 hover:text-white transition-all shadow-sm flex items-center gap-1.5 text-[10px] font-black uppercase"
+                                                title="Editar datos del aval"
+                                            >
+                                                <Pencil className="w-3.5 h-3.5"/> Editar
+                                            </button>
+                                            <button 
+                                                onClick={() => handleDeleteGuarantor(guarantor.name, guarantor.clients)}
+                                                className="p-2 text-rose-600 bg-rose-50 rounded-xl hover:bg-rose-600 hover:text-white transition-all shadow-sm flex items-center gap-1.5 text-[10px] font-black uppercase"
+                                                title="Eliminar aval y desvincular de todos los clientes"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5"/> Eliminar
+                                            </button>
+                                        </div>
+                                    </td>
                                 </tr>
                             ))}
                             {filteredGuarantors.length === 0 && (
                                 <tr>
-                                    <td colSpan={4} className="py-20 text-center">
+                                    <td colSpan={5} className="py-20 text-center">
                                         <div className="flex flex-col items-center text-slate-300">
                                             <Search className="w-12 h-12 mb-4 opacity-10" />
                                             <p className="font-black uppercase text-xs tracking-widest">No se encontraron avales con ese criterio</p>
@@ -4681,6 +4846,91 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                 className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-black uppercase tracking-wider transition-all shadow-md active:scale-95"
               >
                 Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDICIÓN AVAL */}
+      {editingGuarantor && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl border border-slate-100 flex flex-col gap-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 font-bold">
+                  <Pencil className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-800 uppercase tracking-tight text-base">
+                    Editar Aval
+                  </h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                    Actualizará datos en clientes vinculados
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setEditingGuarantor(null)} 
+                className="p-2 bg-slate-100 text-slate-400 rounded-full hover:bg-slate-200 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1 block">
+                  Nombre Completo del Aval
+                </label>
+                <input 
+                  type="text" 
+                  value={editingGuarantor.name}
+                  onChange={(e) => setEditingGuarantor({ ...editingGuarantor, name: e.target.value })}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black uppercase focus:bg-white focus:border-indigo-500 outline-none transition-all"
+                  placeholder="NOMBRE DEL AVAL"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1 block">
+                  Teléfono (10 dígitos)
+                </label>
+                <input 
+                  type="text" 
+                  value={editingGuarantor.cellphone}
+                  onChange={(e) => setEditingGuarantor({ ...editingGuarantor, cellphone: e.target.value })}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black uppercase focus:bg-white focus:border-indigo-500 outline-none transition-all"
+                  placeholder="10 DÍGITOS DE TELÉFONO"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1 mb-1 block">
+                  Dirección Completa
+                </label>
+                <input 
+                  type="text" 
+                  value={editingGuarantor.address}
+                  onChange={(e) => setEditingGuarantor({ ...editingGuarantor, address: e.target.value })}
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-black uppercase focus:bg-white focus:border-indigo-500 outline-none transition-all"
+                  placeholder="DIRECCIÓN DEL AVAL"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-2">
+              <button 
+                onClick={() => setEditingGuarantor(null)} 
+                className="flex-1 py-3 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={handleSaveEditGuarantor} 
+                className="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 flex items-center justify-center gap-2"
+              >
+                <Save className="w-4 h-4" /> Guardar
               </button>
             </div>
           </div>

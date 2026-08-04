@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Supervisor, Client, Visit, Guarantee, SystemSettings, WorkWeek, Financiera, GuarantorRange, Guarantor } from '../types';
-import { Scan, MapPin, Camera, Check, X, Loader2, RefreshCw, UploadCloud, Map as MapIcon, User, Clock, CheckCircle, Home, Plus, Archive, Trash2, Lock, Smartphone, DollarSign, UserCheck, Users, QrCode, ChevronDown, ChevronUp, Calendar, Hash, Phone, History, Navigation, Package, Pencil, AlertTriangle, MessageSquare, Save, Search, ShieldCheck, ShieldAlert, Monitor, Image as LucideImage, Eye } from 'lucide-react';
+import { Scan, MapPin, Camera, Check, X, Loader2, RefreshCw, UploadCloud, Map as MapIcon, User, Clock, CheckCircle, Home, Plus, Archive, Trash2, Lock, Smartphone, DollarSign, UserCheck, Users, QrCode, ChevronDown, ChevronUp, Calendar, Hash, Phone, History, Navigation, Package, Pencil, AlertTriangle, MessageSquare, Save, Search, ShieldCheck, ShieldAlert, Monitor, Image as LucideImage, Eye, UserMinus } from 'lucide-react';
 import { storage, db } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { query, collection, where, getDocs, limit } from 'firebase/firestore';
@@ -626,17 +626,27 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         // if (requireClientPhoto && !clientPhotoFile) { alert("Foto del cliente obligatoria"); return; }
 
         // Final check for aval limits
-        const getAvalLimitInfo = (name: string) => {
+        const getAvalLimitInfo = (name: string, targetClientName?: string) => {
             if (!name) return { ok: true, limit: 2, count: 0 };
-            const norm = name.trim().toUpperCase();
-            const isAlreadyClient = clients.some(cl => !cl.isArchived && cl.name?.trim().toUpperCase() === norm);
+            const norm = removeAccents(name.trim().toUpperCase());
+            const normTargetClient = targetClientName ? removeAccents(targetClientName.trim().toUpperCase()) : '';
+
+            const isAlreadyClient = clients.some(cl => !cl.isArchived && removeAccents((cl.name || '').trim().toUpperCase()) === norm);
             const limit = isAlreadyClient ? maxClientAsAval : maxAvalRegistrations;
 
             let count = 0;
             clients.forEach(cl => {
                 if (cl.isArchived) return;
-                const isAval = cl.avalName?.trim().toUpperCase() === norm ||
-                    cl.avales?.some(a => a.name?.trim().toUpperCase() === norm);
+
+                // RENEWAL / RE-ASSIGNMENT LOGIC:
+                // Skip counting if this client record belongs to the target client being registered/renewed
+                const normClName = removeAccents((cl.name || '').trim().toUpperCase());
+                if (normTargetClient && normClName === normTargetClient) {
+                    return;
+                }
+
+                const isAval = removeAccents((cl.avalName || '').trim().toUpperCase()) === norm ||
+                    cl.avales?.some(a => removeAccents((a.name || '').trim().toUpperCase()) === norm);
                 if (isAval) count++;
             });
             return { ok: count < limit, limit, count };
@@ -644,13 +654,13 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
         const checkClientLimit = (name: string) => {
             if (!name) return true;
-            const norm = name.trim().toUpperCase();
+            const norm = removeAccents(name.trim().toUpperCase());
             if (isRenewalMode) return true;
 
             let clientOccurrenceCount = 0;
             clients.forEach(cl => {
                 if (cl.isArchived) return;
-                if (cl.name?.trim().toUpperCase() === norm) {
+                if (removeAccents((cl.name || '').trim().toUpperCase()) === norm) {
                     clientOccurrenceCount++;
                 }
             });
@@ -665,7 +675,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             return;
         }
 
-        const aval1Limit = getAvalLimitInfo(avalName);
+        const aval1Limit = getAvalLimitInfo(avalName, clientName);
         if (!aval1Limit.ok) {
             setRegistrationError({
                 title: "Límite Excedido",
@@ -674,7 +684,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             return;
         }
         if (requiredAvales >= 2) {
-            const aval2Limit = getAvalLimitInfo(aval2Name);
+            const aval2Limit = getAvalLimitInfo(aval2Name, clientName);
             if (!aval2Limit.ok) {
                 setRegistrationError({
                     title: "Límite Excedido",
@@ -684,7 +694,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             }
         }
         if (requiredAvales >= 3) {
-            const aval3Limit = getAvalLimitInfo(aval3Name);
+            const aval3Limit = getAvalLimitInfo(aval3Name, clientName);
             if (!aval3Limit.ok) {
                 setRegistrationError({
                     title: "Límite Excedido",
@@ -995,7 +1005,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         setAval1Guarantees([]); setAval2Guarantees([]); setAval3Guarantees([]);
         setNewAval1Guarantee(''); setNewAval2Guarantee(''); setNewAval3Guarantee('');
         setTargetAvalClient(null); setScanStatus('idle');
-        setEditingClient(null); setCoincidenceClient(null);
+        setEditingClient(null); setCoincidenceClient(null); setCoincidenceAval(null);
+        setIgnoredAvalNames([]);
         setAval1IsClient(false); setAval2IsClient(false);
         setAval1Search(''); setAval2Search('');
         setAval1SelectedClient(null); setAval2SelectedClient(null);
@@ -1055,6 +1066,43 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         }
     };
 
+    const handleUnlinkAvalFromClientInModal = async (clientIdToUnlink: string, targetAvalName: string) => {
+        const clientToUpdate = clients.find(c => c.id === clientIdToUnlink);
+        if (!clientToUpdate) return;
+
+        if (!confirm(`¿Estás seguro de que deseas desvincular a "${clientToUpdate.name}" del aval "${targetAvalName}"?`)) {
+            return;
+        }
+
+        const normAval = removeAccents(targetAvalName.trim().toUpperCase());
+        const updates: Partial<Client> = {};
+        let modified = false;
+
+        if (clientToUpdate.avalName && removeAccents(clientToUpdate.avalName.trim().toUpperCase()) === normAval) {
+            updates.avalName = '';
+            updates.avalAddress = '';
+            updates.avalCellphone = '';
+            updates.avalFacadeUrl = '';
+            updates.avalPhotoUrl = '';
+            updates.avalLatitude = undefined;
+            updates.avalLongitude = undefined;
+            updates.avalVisitTimestamp = undefined;
+            modified = true;
+        }
+
+        if (clientToUpdate.avales && clientToUpdate.avales.length > 0) {
+            const updatedAvales = clientToUpdate.avales.filter(a => a.name && removeAccents(a.name.trim().toUpperCase()) !== normAval);
+            if (updatedAvales.length !== clientToUpdate.avales.length) {
+                updates.avales = updatedAvales;
+                modified = true;
+            }
+        }
+
+        if (modified) {
+            await onUpdateClient(clientIdToUnlink, updates);
+        }
+    };
+
     // NEW: Coincidence check effect
     useEffect(() => {
         if (!clientName || view !== 'scan' || scanStatus !== 'found_new' || isRenewalMode) {
@@ -1086,7 +1134,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
     // NEW: Aval Coincidence check effect
     useEffect(() => {
-        if (!avalName || view !== 'scan' || scanStatus !== 'found_new' || isRenewalMode) {
+        if (!avalName || view !== 'scan' || scanStatus !== 'found_new') {
             setCoincidenceAval(null);
             return;
         }
@@ -1096,6 +1144,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             setCoincidenceAval(null);
             return;
         }
+
+        const normalizedCurrentClient = removeAccents((clientName || '').trim().toUpperCase());
 
         // Find coincidence in all clients (since avales can be anywhere)
         let avalCount = 0;
@@ -1115,7 +1165,11 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             }
 
             if (isAvalInThisRecord) {
-                avalCount++;
+                // RENEWAL / RE-ASSIGNMENT LOGIC:
+                // If this client record is for the same client currently being registered/renewed, don't count it as a separate client
+                if (!normalizedCurrentClient || normalizedName !== normalizedCurrentClient) {
+                    avalCount++;
+                }
                 if (!firstMatchClient) firstMatchClient = cl;
             }
         });
@@ -1128,7 +1182,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         } else {
             setCoincidenceAval(null);
         }
-    }, [avalName, view, scanStatus, clients, isRenewalMode, ignoredAvalNames]);
+    }, [avalName, clientName, view, scanStatus, clients, isRenewalMode, ignoredAvalNames, maxClientAsAval, maxAvalRegistrations]);
 
     // NEW: Delay welcome modal check to let Firestore sync initial data
     useEffect(() => {
@@ -2051,7 +2105,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                     </div>
                                 )}
 
-                                <input type="text" value={avalName} onChange={e => { setAvalName(removeAccents(e.target.value).toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                <input type="text" value={avalName} onChange={e => { setAvalName(removeAccents(e.target.value).toUpperCase()); if (aval1IsClient) setAval1IsClient(false); setIgnoredAvalNames([]); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
                                 <input type="text" value={avalAddress} onChange={e => { setAvalAddress(removeAccents(e.target.value).toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
                                 <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={avalCellphone} onChange={e => { setAvalCellphone(e.target.value.replace(/\D/g, '')); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
 
@@ -2528,147 +2582,174 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
             {/* MODAL COINCIDENCIA DE AVAL */}
             <AnimatePresence>
-                {coincidenceAval && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
-                    >
+                {coincidenceAval && (() => {
+                    const isSameClientRenewal = (() => {
+                        if (!clientName || !avalName) return false;
+                        const normClient = removeAccents(clientName.trim().toUpperCase());
+                        const normAval = removeAccents(avalName.trim().toUpperCase());
+                        return clients.some(cl => {
+                            if (cl.isArchived) return false;
+                            const normClName = removeAccents((cl.name || '').trim().toUpperCase());
+                            if (normClName !== normClient) return false;
+                            const normClAval = removeAccents((cl.avalName || '').trim().toUpperCase());
+                            return normClAval === normAval || cl.avales?.some(a => removeAccents((a.name || '').trim().toUpperCase()) === normAval);
+                        });
+                    })();
+
+                    const isLimitReached = coincidenceAval.count >= coincidenceAval.limit;
+
+                    return (
                         <motion.div
-                            initial={{ scale: 0.9, y: 20 }}
-                            animate={{ scale: 1, y: 0 }}
-                            exit={{ scale: 0.9, y: 20 }}
-                            className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
                         >
-                            <div className={`${coincidenceAval.count >= coincidenceAval.limit ? 'bg-red-500' : 'bg-amber-500'} p-4 flex items-center justify-between text-white`}>
-                                <div className="flex items-center gap-3">
-                                    <AlertTriangle className="w-6 h-6 animate-pulse" />
-                                    <h3 className="font-black uppercase text-sm tracking-tight text-white">
-                                        {coincidenceAval.count >= coincidenceAval.limit ? 'Límite de Avales Alcanzado' : 'Persona ya registrada'}
-                                    </h3>
-                                </div>
-                                <button 
-                                    onClick={() => {
-                                        setAvalName('');
-                                        setCoincidenceAval(null);
-                                    }}
-                                    className="p-1 rounded-full hover:bg-black/20 transition-colors text-white"
-                                >
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            <div className="p-6 space-y-6">
-                                <div className="flex flex-col items-center text-center">
-                                    <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-3 border-2 border-indigo-100 shadow-sm">
-                                        <UserCheck className="w-8 h-8" />
-                                    </div>
-                                    <h4 className="text-lg font-black text-slate-900 uppercase leading-tight">
-                                        {avalName}
-                                    </h4>
-                                </div>
-
-                                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3 text-center">
-                                    <p className="text-xs font-bold text-slate-700 leading-snug">
-                                        {coincidenceAval.count >= coincidenceAval.limit ? (
-                                            <>Esta persona ya alcanzó el límite de registros como aval (<span className="text-red-600 font-black">{coincidenceAval.count} de {coincidenceAval.limit}</span>). Por reglamento no puede ser aval de más clientes.</>
+                            <motion.div
+                                initial={{ scale: 0.9, y: 20 }}
+                                animate={{ scale: 1, y: 0 }}
+                                exit={{ scale: 0.9, y: 20 }}
+                                className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden"
+                            >
+                                <div className={`${isSameClientRenewal ? 'bg-emerald-600' : (isLimitReached ? 'bg-red-500' : 'bg-amber-500')} p-4 flex items-center justify-between text-white`}>
+                                    <div className="flex items-center gap-3">
+                                        {isSameClientRenewal ? (
+                                            <ShieldCheck className="w-6 h-6 animate-pulse" />
                                         ) : (
-                                            <>Por reglamento, solo se permite <span className="text-indigo-600 font-black">1 Préstamo</span> y ser <span className="text-indigo-600 font-black">Aval de 2 clientes</span>. Esta persona ya tiene <span className="text-indigo-600 font-black">{coincidenceAval.count} registro(s)</span> como aval.</>
+                                            <AlertTriangle className="w-6 h-6 animate-pulse" />
                                         )}
-                                    </p>
-
-                                    {/* Lista de clientes y supervisores a los que está vinculado como aval */}
-                                    {(() => {
-                                        const normalizedTyped = removeAccents(avalName.trim().toUpperCase());
-                                        const linkedClients = clients.filter(cl => {
-                                            if (cl.isArchived) return false;
-                                            const normalizedAvalName = removeAccents((cl.avalName || '').trim().toUpperCase());
-                                            return normalizedAvalName === normalizedTyped ||
-                                                cl.avales?.some(a => removeAccents((a.name || '').trim().toUpperCase()) === normalizedTyped);
-                                        });
-
-                                        if (linkedClients.length === 0) return null;
-
-                                        return (
-                                            <div className="pt-2 border-t border-slate-200/80 text-left space-y-2">
-                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider text-center">
-                                                    Actualmente es aval de:
-                                                </p>
-                                                <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
-                                                    {linkedClients.map((cl, i) => {
-                                                        const fullSupName = allSupervisors.find(s => s.id === cl.supervisorId)?.name || 'S/S';
-                                                        const firstNameOnly = fullSupName.split('-')[0].trim().split(' ')[0];
-
-                                                        // Buscar última fecha (visita más reciente o fecha de registro)
-                                                        const clientVisits = visits.filter(v => v.clientId === cl.id);
-                                                        const lastVisitTs = clientVisits.length > 0 
-                                                            ? Math.max(...clientVisits.map(v => v.timestamp))
-                                                            : cl.registeredAt;
-                                                        
-                                                        const formattedDate = lastVisitTs 
-                                                            ? new Date(lastVisitTs).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: '2-digit' }).toUpperCase()
-                                                            : 'SIN FECHA';
-
-                                                        return (
-                                                            <div key={cl.id || i} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
-                                                                <div className="flex items-start justify-between gap-2">
-                                                                    <div className="flex items-start gap-2 min-w-0">
-                                                                        <User className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
-                                                                        <span className="font-black text-slate-900 text-xs uppercase leading-tight break-words">
-                                                                            {cl.name}
-                                                                        </span>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-[10px]">
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <span className="text-slate-400 font-bold uppercase">Supervisora:</span>
-                                                                        <span className="font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 uppercase">
-                                                                            {firstNameOnly}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-1 text-slate-500 font-bold bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100 text-[9.5px]">
-                                                                        <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                                                                        <span>{formattedDate}</span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        );
-                                    })()}
-
-                                    {coincidenceAval.count < coincidenceAval.limit && (
-                                        <p className="text-xs font-black text-indigo-600 uppercase tracking-wide pt-1">
-                                            ¿Quieres reutilizar sus datos existentes?
-                                        </p>
-                                    )}
+                                        <h3 className="font-black uppercase text-sm tracking-tight text-white">
+                                            {isSameClientRenewal ? 'Renovación Autorizada por Mismo Aval' : (isLimitReached ? 'Límite de Avales Alcanzado' : 'Persona ya registrada')}
+                                        </h3>
+                                    </div>
+                                    <button 
+                                        onClick={() => {
+                                            setAvalName('');
+                                            setCoincidenceAval(null);
+                                        }}
+                                        className="p-1 rounded-full hover:bg-black/20 transition-colors text-white"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
                                 </div>
 
-                                <div className="flex gap-3">
-                                    {coincidenceAval.count >= coincidenceAval.limit ? (
-                                        <button
-                                            onClick={() => {
-                                                setAvalName('');
-                                                setCoincidenceAval(null);
-                                            }}
-                                            className="w-full py-3.5 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg transition-all active:scale-95"
-                                        >
-                                            Entendido / Cambiar Aval
-                                        </button>
-                                    ) : (
-                                        <>
-                                            <button
-                                                onClick={() => {
-                                                    setAvalName('');
-                                                    setCoincidenceAval(null);
-                                                }}
-                                                className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-wider hover:bg-slate-200 transition-all active:scale-95"
-                                            >
-                                                Cerrar
-                                            </button>
+                                <div className="p-6 space-y-6">
+                                    <div className="flex flex-col items-center text-center">
+                                        <div className="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 mb-3 border-2 border-indigo-100 shadow-sm">
+                                            <UserCheck className="w-8 h-8" />
+                                        </div>
+                                        <h4 className="text-lg font-black text-slate-900 uppercase leading-tight">
+                                            {avalName}
+                                        </h4>
+                                    </div>
+
+                                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-3 text-center">
+                                        {isSameClientRenewal ? (
+                                            <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-2xl text-left space-y-1 shadow-xs">
+                                                <div className="flex items-center gap-1.5 text-emerald-800 font-black text-xs uppercase">
+                                                    <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                                                    <span>Autorizado por Renovación</span>
+                                                </div>
+                                                <p className="text-[11px] font-bold text-emerald-700 leading-snug">
+                                                    {avalName} ya es aval de {clientName} en su crédito anterior. Al tratarse de una renovación del mismo cliente, se autoriza la operación y no consume un nuevo cupo.
+                                                </p>
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs font-bold text-slate-700 leading-snug">
+                                                {isLimitReached ? (
+                                                    <>Esta persona ya alcanzó el límite de registros como aval (<span className="text-red-600 font-black">{coincidenceAval.count} de {coincidenceAval.limit}</span>). Por reglamento no puede ser aval de más clientes.</>
+                                                ) : (
+                                                    <>Por reglamento, solo se permite <span className="text-indigo-600 font-black">1 Préstamo</span> y ser <span className="text-indigo-600 font-black">Aval de 2 clientes</span>. Esta persona ya tiene <span className="text-indigo-600 font-black">{coincidenceAval.count} registro(s)</span> como aval.</>
+                                                )}
+                                            </p>
+                                        )}
+
+                                        {/* Lista de clientes y supervisores a los que está vinculado como aval */}
+                                        {(() => {
+                                            const normalizedTyped = removeAccents(avalName.trim().toUpperCase());
+                                            const linkedClients = clients.filter(cl => {
+                                                if (cl.isArchived) return false;
+                                                const normalizedAvalName = removeAccents((cl.avalName || '').trim().toUpperCase());
+                                                return normalizedAvalName === normalizedTyped ||
+                                                    cl.avales?.some(a => removeAccents((a.name || '').trim().toUpperCase()) === normalizedTyped);
+                                            });
+
+                                            if (linkedClients.length === 0) return null;
+
+                                            return (
+                                                <div className="pt-2 border-t border-slate-200/80 text-left space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                                                            Actualmente es aval de:
+                                                        </p>
+                                                        {!isSameClientRenewal && (
+                                                            <span className="text-[9px] font-bold text-rose-500 bg-rose-50 px-2 py-0.5 rounded-full border border-rose-100 uppercase">
+                                                                Selecciona para desvincular
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                                        {linkedClients.map((cl, i) => {
+                                                            const fullSupName = allSupervisors.find(s => s.id === cl.supervisorId)?.name || 'S/S';
+                                                            const firstNameOnly = fullSupName.split('-')[0].trim().split(' ')[0];
+
+                                                            // Buscar última fecha (visita más reciente o fecha de registro)
+                                                            const clientVisits = visits.filter(v => v.clientId === cl.id);
+                                                            const lastVisitTs = clientVisits.length > 0 
+                                                                ? Math.max(...clientVisits.map(v => v.timestamp))
+                                                                : cl.registeredAt;
+                                                            
+                                                            const formattedDate = lastVisitTs 
+                                                                ? new Date(lastVisitTs).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: '2-digit' }).toUpperCase()
+                                                                : 'SIN FECHA';
+
+                                                            return (
+                                                                <div key={cl.id || i} className="bg-white p-3 rounded-2xl border border-slate-200 shadow-sm space-y-2">
+                                                                    <div className="flex items-start justify-between gap-2">
+                                                                        <div className="flex items-start gap-2 min-w-0">
+                                                                            <User className="w-4 h-4 text-indigo-600 flex-shrink-0 mt-0.5" />
+                                                                            <span className="font-black text-slate-900 text-xs uppercase leading-tight break-words">
+                                                                                {cl.name}
+                                                                            </span>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={() => handleUnlinkAvalFromClientInModal(cl.id, avalName)}
+                                                                            className="px-2.5 py-1 bg-rose-50 text-rose-600 hover:bg-rose-600 hover:text-white rounded-xl text-[9.5px] font-black uppercase transition-all shadow-xs border border-rose-100 flex items-center gap-1 flex-shrink-0 cursor-pointer"
+                                                                            title={`Desvincular a ${cl.name} del aval ${avalName}`}
+                                                                        >
+                                                                            <UserMinus className="w-3 h-3" />
+                                                                            <span>Desvincular</span>
+                                                                        </button>
+                                                                    </div>
+                                                                    <div className="flex items-center justify-between pt-1.5 border-t border-slate-100 text-[10px]">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <span className="text-slate-400 font-bold uppercase">Supervisora:</span>
+                                                                            <span className="font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100 uppercase">
+                                                                                {firstNameOnly}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1 text-slate-500 font-bold bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100 text-[9.5px]">
+                                                                            <Calendar className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                                                            <span>{formattedDate}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })()}
+
+                                        {!isSameClientRenewal && coincidenceAval.count < coincidenceAval.limit && (
+                                            <p className="text-xs font-black text-indigo-600 uppercase tracking-wide pt-1">
+                                                ¿Quieres reutilizar sus datos existentes?
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        {isSameClientRenewal ? (
                                             <button
                                                 onClick={() => {
                                                     setAvalAddress(coincidenceAval.client.avalAddress || '');
@@ -2677,18 +2758,53 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                     if (currentName) setIgnoredAvalNames(prev => [...prev, currentName]);
                                                     setCoincidenceAval(null);
                                                 }}
-                                                className="flex-1 py-3.5 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all active:scale-95"
+                                                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg shadow-emerald-100 flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
                                             >
                                                 <UserCheck className="w-4 h-4" />
-                                                Reutilizar
+                                                Autorizar y Usar este Aval
                                             </button>
-                                        </>
-                                    )}
+                                        ) : isLimitReached ? (
+                                            <button
+                                                onClick={() => {
+                                                    setAvalName('');
+                                                    setCoincidenceAval(null);
+                                                }}
+                                                className="w-full py-3.5 bg-slate-900 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg transition-all active:scale-95"
+                                            >
+                                                Entendido / Cambiar Aval
+                                            </button>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={() => {
+                                                        setAvalName('');
+                                                        setCoincidenceAval(null);
+                                                    }}
+                                                    className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-wider hover:bg-slate-200 transition-all active:scale-95"
+                                                >
+                                                    Cerrar
+                                                </button>
+                                                <button
+                                                    onClick={() => {
+                                                        setAvalAddress(coincidenceAval.client.avalAddress || '');
+                                                        setAvalCellphone(coincidenceAval.client.avalCellphone || '');
+                                                        const currentName = removeAccents(avalName.trim().toUpperCase());
+                                                        if (currentName) setIgnoredAvalNames(prev => [...prev, currentName]);
+                                                        setCoincidenceAval(null);
+                                                    }}
+                                                    className="flex-1 py-3.5 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all active:scale-95"
+                                                >
+                                                    <UserCheck className="w-4 h-4" />
+                                                    Reutilizar
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
+                            </motion.div>
                         </motion.div>
-                    </motion.div>
-                )}
+                    );
+                })()}
             </AnimatePresence>
 
             {/* MODAL DE CONFIRMACIÓN DE CUMPLEAÑOS DEL SUPERVISOR */}
@@ -3152,7 +3268,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                 )}
                                             </div>
                                         )}
-                                        <input type="text" value={avalName} onChange={e => setAvalName(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                        <input type="text" value={avalName} onChange={e => { setAvalName(removeAccents(e.target.value).toUpperCase()); setIgnoredAvalNames([]); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
                                         <input type="text" value={avalAddress} onChange={e => setAvalAddress(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
                                         <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={avalCellphone} onChange={e => setAvalCellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
 
