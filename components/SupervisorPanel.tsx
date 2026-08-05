@@ -101,6 +101,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
     // Forms state
     const [clientName, setClientName] = useState('');
+    const [showClientSuggestions, setShowClientSuggestions] = useState(false);
+    const [showAvalSuggestions, setShowAvalSuggestions] = useState(false);
     const [clientAddress, setClientAddress] = useState('');
     const [creditAmount, setCreditAmount] = useState('');
     const [cellphone, setCellphone] = useState('');
@@ -109,6 +111,102 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const [avalName, setAvalName] = useState('');
     const [avalAddress, setAvalAddress] = useState('');
     const [avalCellphone, setAvalCellphone] = useState('');
+
+    const clientSuggestions = useMemo(() => {
+        const norm = removeAccents(clientName.trim().toUpperCase());
+        if (!norm || norm.length < 2 || isRenewalMode) return [];
+
+        return clients
+            .filter(c => {
+                if (c.isArchived) return false;
+                const normName = removeAccents(c.name.trim().toUpperCase());
+                return normName.includes(norm);
+            })
+            .slice(0, 6)
+            .map(c => {
+                const supName = allSupervisors.find(s => s.id === c.supervisorId)?.name || supervisor.name || 'S/S';
+                return {
+                    ...c,
+                    supervisorName: supName
+                };
+            });
+    }, [clientName, clients, isRenewalMode, allSupervisors, supervisor]);
+
+    const avalSuggestions = useMemo(() => {
+        const norm = removeAccents(avalName.trim().toUpperCase());
+        if (!norm || norm.length < 2) return [];
+
+        const candidateMap = new Map<string, {
+            id: string;
+            name: string;
+            address: string;
+            cellphone: string;
+            supervisorName: string;
+            sourceClient: Client;
+        }>();
+
+        clients.forEach(cl => {
+            if (cl.isArchived) return;
+            const supName = allSupervisors.find(s => s.id === cl.supervisorId)?.name || supervisor.name || 'S/S';
+
+            // 1. Check legacy avalName
+            if (cl.avalName) {
+                const normAval = removeAccents(cl.avalName.trim().toUpperCase());
+                if (normAval.includes(norm)) {
+                    if (!candidateMap.has(normAval)) {
+                        candidateMap.set(normAval, {
+                            id: `legacy-${cl.id}`,
+                            name: cl.avalName.trim().toUpperCase(),
+                            address: cl.avalAddress || '',
+                            cellphone: cl.avalCellphone || '',
+                            supervisorName: supName,
+                            sourceClient: cl
+                        });
+                    }
+                }
+            }
+
+            // 2. Check cl.avales array
+            if (cl.avales && cl.avales.length > 0) {
+                cl.avales.forEach((a, idx) => {
+                    if (a.name) {
+                        const normA = removeAccents(a.name.trim().toUpperCase());
+                        if (normA.includes(norm)) {
+                            if (!candidateMap.has(normA)) {
+                                candidateMap.set(normA, {
+                                    id: `aval-${cl.id}-${idx}`,
+                                    name: a.name.trim().toUpperCase(),
+                                    address: a.address || '',
+                                    cellphone: a.cellphone || '',
+                                    supervisorName: supName,
+                                    sourceClient: cl
+                                });
+                            }
+                        }
+                    }
+                });
+            }
+
+            // 3. Check client themselves as an aval candidate
+            if (cl.name) {
+                const normClientName = removeAccents(cl.name.trim().toUpperCase());
+                if (normClientName.includes(norm)) {
+                    if (!candidateMap.has(normClientName)) {
+                        candidateMap.set(normClientName, {
+                            id: `client-${cl.id}`,
+                            name: cl.name.trim().toUpperCase(),
+                            address: cl.address || '',
+                            cellphone: cl.cellphone || '',
+                            supervisorName: supName,
+                            sourceClient: cl
+                        });
+                    }
+                }
+            }
+        });
+
+        return Array.from(candidateMap.values()).slice(0, 6);
+    }, [avalName, clients, allSupervisors, supervisor]);
 
     const [aval2Name, setAval2Name] = useState('');
     const [aval2Address, setAval2Address] = useState('');
@@ -1103,53 +1201,21 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         }
     };
 
-    // NEW: Coincidence check effect
-    useEffect(() => {
-        if (!clientName || view !== 'scan' || scanStatus !== 'found_new' || isRenewalMode) {
-            setCoincidenceClient(null);
-            return;
-        }
+    // Helper to trigger aval coincidence check when selected from suggestions list
+    const handleSelectAvalCandidate = useCallback((c: Client, selectedName?: string, selectedAddress?: string, selectedCellphone?: string) => {
+        const finalName = selectedName || c.avalName || c.name;
+        const finalAddress = selectedAddress || c.avalAddress || c.address || '';
+        const finalCellphone = selectedCellphone || c.avalCellphone || c.cellphone || '';
 
-        const normalizedTyped = removeAccents(clientName.trim().toUpperCase());
-        if (!normalizedTyped || ignoredNames.includes(normalizedTyped)) {
-            setCoincidenceClient(null);
-            return;
-        }
+        setAvalName(finalName);
+        setAvalAddress(finalAddress);
+        setAvalCellphone(finalCellphone);
+        setShowAvalSuggestions(false);
 
-        // Find EXACT coincidence (Full Name equality without accents) within the same financiera
-        const found = financieraClients.find(c => {
-            const normalizedClientName = removeAccents(c.name.trim().toUpperCase());
-            return normalizedClientName === normalizedTyped;
-        });
-
-        if (found) {
-            // Only trigger if not already showing this one
-            if (!coincidenceClient || coincidenceClient.id !== found.id) {
-                setCoincidenceClient(found);
-            }
-        } else {
-            setCoincidenceClient(null);
-        }
-    }, [clientName, view, scanStatus, financieraClients, isRenewalMode]);
-
-    // NEW: Aval Coincidence check effect
-    useEffect(() => {
-        if (!avalName || view !== 'scan' || scanStatus !== 'found_new') {
-            setCoincidenceAval(null);
-            return;
-        }
-
-        const normalizedTyped = removeAccents(avalName.trim().toUpperCase());
-        if (!normalizedTyped || ignoredAvalNames.includes(normalizedTyped) || normalizedTyped.length < 5) {
-            setCoincidenceAval(null);
-            return;
-        }
-
+        const normalizedTyped = removeAccents(finalName.trim().toUpperCase());
         const normalizedCurrentClient = removeAccents((clientName || '').trim().toUpperCase());
 
-        // Find coincidence in all clients (since avales can be anywhere)
         let avalCount = 0;
-        let firstMatchClient: Client | null = null;
         let isAlreadyClient = false;
 
         clients.forEach(cl => {
@@ -1161,28 +1227,35 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
             if (normalizedName === normalizedTyped) {
                 isAlreadyClient = true;
-                if (!firstMatchClient) firstMatchClient = cl;
             }
 
             if (isAvalInThisRecord) {
-                // RENEWAL / RE-ASSIGNMENT LOGIC:
-                // If this client record is for the same client currently being registered/renewed, don't count it as a separate client
                 if (!normalizedCurrentClient || normalizedName !== normalizedCurrentClient) {
                     avalCount++;
                 }
-                if (!firstMatchClient) firstMatchClient = cl;
             }
         });
 
-        if ((avalCount > 0 || isAlreadyClient) && firstMatchClient) {
-            const currentLimit = isAlreadyClient ? maxClientAsAval : maxAvalRegistrations;
-            if (!coincidenceAval || coincidenceAval.client.id !== firstMatchClient.id || coincidenceAval.count !== avalCount || coincidenceAval.isAlreadyClient !== isAlreadyClient || coincidenceAval.limit !== currentLimit) {
-                setCoincidenceAval({ client: firstMatchClient, count: avalCount, isAlreadyClient, limit: currentLimit });
-            }
+        const currentLimit = isAlreadyClient ? maxClientAsAval : maxAvalRegistrations;
+        if (avalCount > 0 || isAlreadyClient) {
+            setCoincidenceAval({ client: c, count: avalCount, isAlreadyClient, limit: currentLimit });
         } else {
             setCoincidenceAval(null);
         }
-    }, [avalName, clientName, view, scanStatus, clients, isRenewalMode, ignoredAvalNames, maxClientAsAval, maxAvalRegistrations]);
+    }, [clientName, clients, maxClientAsAval, maxAvalRegistrations]);
+
+    // Coincidence check effects (disabled automatic popups while typing; modals trigger on explicit selection)
+    useEffect(() => {
+        if (!clientName || view !== 'scan' || scanStatus !== 'found_new' || isRenewalMode) {
+            setCoincidenceClient(null);
+        }
+    }, [clientName, view, scanStatus, isRenewalMode]);
+
+    useEffect(() => {
+        if (!avalName || view !== 'scan' || scanStatus !== 'found_new') {
+            setCoincidenceAval(null);
+        }
+    }, [avalName, view, scanStatus]);
 
     // NEW: Delay welcome modal check to let Firestore sync initial data
     useEffect(() => {
@@ -1934,7 +2007,12 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                         <input
                                             type="text"
                                             value={clientName}
-                                            onChange={e => setClientName(removeAccents(e.target.value).toUpperCase())}
+                                            onChange={e => {
+                                                const val = removeAccents(e.target.value).toUpperCase();
+                                                setClientName(val);
+                                                setShowClientSuggestions(true);
+                                            }}
+                                            onFocus={() => setShowClientSuggestions(true)}
                                             disabled={isRenewalMode && !!clientName}
                                             className={`w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase ${isRenewalMode && clientName ? 'opacity-60 bg-slate-50 cursor-not-allowed' : ''}`}
                                             placeholder="Nombre completo"
@@ -1942,6 +2020,102 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                         {isRenewalMode && clientName && (
                                             <div className="absolute right-4 top-1/2 -translate-y-1/2">
                                                 <Lock className="w-4 h-4 text-slate-400" />
+                                            </div>
+                                        )}
+
+                                        {/* DROPDOWN DE COINCIDENCIAS PARA CLIENTE */}
+                                        {showClientSuggestions && clientSuggestions.length > 0 && (
+                                            <div className="absolute z-[60] left-0 right-0 top-full mt-1 bg-white border border-indigo-100 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                                                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 px-4 py-2 border-b border-indigo-100 flex items-center justify-between">
+                                                    <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+                                                        <User className="w-3 h-3 text-indigo-600" /> Coincidencias de Clientes ({clientSuggestions.length})
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowClientSuggestions(false)}
+                                                        className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
+                                                    >
+                                                        Cerrar
+                                                    </button>
+                                                </div>
+                                                <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
+                                                    {clientSuggestions.map((c) => {
+                                                        const normTyped = removeAccents(clientName.trim().toUpperCase());
+                                                        const normName = removeAccents(c.name.trim().toUpperCase());
+                                                        const isExact = normName === normTyped;
+
+                                                        return (
+                                                            <div
+                                                                key={c.id}
+                                                                className="p-3 bg-white rounded-xl shadow-2xs hover:bg-indigo-50/40 transition-colors flex flex-col gap-2 border border-slate-100"
+                                                            >
+                                                                {/* Nombre Completo */}
+                                                                <div className="flex items-start gap-2.5">
+                                                                    <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs flex-shrink-0 mt-0.5 shadow-2xs">
+                                                                        {c.name.charAt(0)}
+                                                                    </div>
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p className="font-black text-slate-900 text-xs uppercase leading-snug break-words whitespace-normal tracking-tight">
+                                                                            {c.name}
+                                                                        </p>
+                                                                        {isExact && (
+                                                                            <span className="inline-block mt-0.5 bg-amber-100 text-amber-800 text-[8.5px] px-2 py-0.5 rounded-full font-black uppercase">
+                                                                                Coincidencia Exacta
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Domicilio, Celular, Supervisora */}
+                                                                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100/80 text-[10px] space-y-1 text-slate-600">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <MapPin className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                                                        <span className="font-semibold text-slate-500 uppercase">Dom:</span>
+                                                                        <span className="font-bold text-slate-800 uppercase break-words flex-1">{c.address || 'Sin domicilio'}</span>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-2 gap-2 pt-0.5">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <Smartphone className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                                                            <span className="font-semibold text-slate-500 uppercase">Cel:</span>
+                                                                            <span className="font-bold text-slate-800 font-mono">{c.cellphone || 'Sin celular'}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <User className="w-3 h-3 text-indigo-500 flex-shrink-0" />
+                                                                            <span className="font-semibold text-slate-500 uppercase">Sup:</span>
+                                                                            <span className="font-black text-indigo-700 uppercase truncate">{c.supervisorName}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Botones */}
+                                                                <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100/80">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setClientName(c.name);
+                                                                            setShowClientSuggestions(false);
+                                                                        }}
+                                                                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase transition-colors"
+                                                                    >
+                                                                        Usar
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setClientName(c.name);
+                                                                            setShowClientSuggestions(false);
+                                                                            handleSelectRenewalClient(c);
+                                                                        }}
+                                                                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs flex items-center gap-1.5"
+                                                                    >
+                                                                        <RefreshCw className="w-3.5 h-3.5" />
+                                                                        Renovar
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -2105,7 +2279,95 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                     </div>
                                 )}
 
-                                <input type="text" value={avalName} onChange={e => { setAvalName(removeAccents(e.target.value).toUpperCase()); if (aval1IsClient) setAval1IsClient(false); setIgnoredAvalNames([]); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        value={avalName}
+                                        onChange={e => {
+                                            const val = removeAccents(e.target.value).toUpperCase();
+                                            setAvalName(val);
+                                            if (aval1IsClient) setAval1IsClient(false);
+                                            setIgnoredAvalNames([]);
+                                            setShowAvalSuggestions(true);
+                                        }}
+                                        onFocus={() => setShowAvalSuggestions(true)}
+                                        className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                                        placeholder="Nombre completo"
+                                    />
+
+                                    {/* DROPDOWN DE COINCIDENCIAS PARA AVAL */}
+                                    {showAvalSuggestions && avalSuggestions.length > 0 && (
+                                        <div className="absolute z-[60] left-0 right-0 top-full mt-1 bg-white border border-blue-100 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                                            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2 border-b border-blue-100 flex items-center justify-between">
+                                                <span className="text-[10px] font-black text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                                                    <UserCheck className="w-3 h-3 text-blue-600" /> Coincidencias de Avales ({avalSuggestions.length})
+                                                </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowAvalSuggestions(false)}
+                                                    className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
+                                                >
+                                                    Cerrar
+                                                </button>
+                                            </div>
+                                            <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
+                                                {avalSuggestions.map((c) => (
+                                                    <div
+                                                        key={c.id}
+                                                        className="p-3 bg-white rounded-xl shadow-2xs hover:bg-blue-50/40 transition-colors flex flex-col gap-2 border border-slate-100"
+                                                    >
+                                                        {/* Nombre del Aval */}
+                                                        <div className="flex items-start gap-2.5">
+                                                            <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-xs flex-shrink-0 mt-0.5 shadow-2xs">
+                                                                {c.name.charAt(0)}
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="font-black text-slate-900 text-xs uppercase leading-snug break-words whitespace-normal tracking-tight">
+                                                                    {c.name}
+                                                                </p>
+                                                                <span className="inline-block mt-0.5 text-[8.5px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase border border-blue-100">
+                                                                    Aval Registrado
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Domicilio del Aval, Celular del Aval, Supervisora */}
+                                                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100/80 text-[10px] space-y-1 text-slate-600">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <MapPin className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                                                <span className="font-semibold text-slate-500 uppercase">Dom:</span>
+                                                                <span className="font-bold text-slate-800 uppercase break-words flex-1">{c.address || 'Sin domicilio'}</span>
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-2 pt-0.5">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <Smartphone className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                                                    <span className="font-semibold text-slate-500 uppercase">Cel:</span>
+                                                                    <span className="font-bold text-slate-800 font-mono">{c.cellphone || 'Sin celular'}</span>
+                                                                </div>
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <User className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                                                                    <span className="font-semibold text-slate-500 uppercase">Sup:</span>
+                                                                    <span className="font-black text-blue-700 uppercase truncate">{c.supervisorName}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* Botón */}
+                                                        <div className="flex items-center justify-end pt-1 border-t border-slate-100/80">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleSelectAvalCandidate(c.sourceClient, c.name, c.address, c.cellphone)}
+                                                                className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs text-center"
+                                                            >
+                                                                Usar este Aval
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                                 <input type="text" value={avalAddress} onChange={e => { setAvalAddress(removeAccents(e.target.value).toUpperCase()); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
                                 <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={avalCellphone} onChange={e => { setAvalCellphone(e.target.value.replace(/\D/g, '')); if (aval1IsClient) setAval1IsClient(false); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
 
@@ -2521,7 +2783,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                 </div>
                                 <button 
                                     onClick={() => {
-                                        setClientName('');
+                                        const currentName = removeAccents(clientName.trim().toUpperCase());
+                                        if (currentName) setIgnoredNames(prev => [...prev, currentName]);
                                         setCoincidenceClient(null);
                                     }}
                                     className="p-1 rounded-full hover:bg-amber-600/50 transition-colors text-white"
@@ -2556,12 +2819,13 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                 <div className="flex gap-3">
                                     <button
                                         onClick={() => {
-                                            setClientName('');
+                                            const currentName = removeAccents(clientName.trim().toUpperCase());
+                                            if (currentName) setIgnoredNames(prev => [...prev, currentName]);
                                             setCoincidenceClient(null);
                                         }}
                                         className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-wider hover:bg-slate-200 transition-all active:scale-95"
                                     >
-                                        Cerrar
+                                        Cerrar / Ignorar
                                     </button>
                                     <button
                                         onClick={() => {
@@ -2624,7 +2888,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                     </div>
                                     <button 
                                         onClick={() => {
-                                            setAvalName('');
+                                            const currentName = removeAccents(avalName.trim().toUpperCase());
+                                            if (currentName) setIgnoredAvalNames(prev => [...prev, currentName]);
                                             setCoincidenceAval(null);
                                         }}
                                         className="p-1 rounded-full hover:bg-black/20 transition-colors text-white"
@@ -2777,12 +3042,13 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                             <>
                                                 <button
                                                     onClick={() => {
-                                                        setAvalName('');
+                                                        const currentName = removeAccents(avalName.trim().toUpperCase());
+                                                        if (currentName) setIgnoredAvalNames(prev => [...prev, currentName]);
                                                         setCoincidenceAval(null);
                                                     }}
                                                     className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-wider hover:bg-slate-200 transition-all active:scale-95"
                                                 >
-                                                    Cerrar
+                                                    Cerrar / Ignorar
                                                 </button>
                                                 <button
                                                     onClick={() => {
@@ -3075,7 +3341,116 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                 <div className="space-y-4">
                                     <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">Datos Generales</h4>
                                     <div className="space-y-3">
-                                        <input type="text" value={clientName} onChange={e => setClientName(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase" placeholder="Nombre completo" />
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={clientName}
+                                                onChange={e => {
+                                                const val = removeAccents(e.target.value).toUpperCase();
+                                                    setClientName(val);
+                                                    setShowClientSuggestions(true);
+                                                }}
+                                                onFocus={() => setShowClientSuggestions(true)}
+                                                className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase"
+                                                placeholder="Nombre completo"
+                                            />
+
+                                            {/* DROPDOWN DE COINCIDENCIAS PARA CLIENTE EN EDICIÓN */}
+                                            {showClientSuggestions && clientSuggestions.length > 0 && (
+                                                <div className="absolute z-[60] left-0 right-0 top-full mt-1 bg-white border border-indigo-100 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                                                    <div className="bg-gradient-to-r from-indigo-50 to-purple-50 px-4 py-2 border-b border-indigo-100 flex items-center justify-between">
+                                                        <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+                                                            <User className="w-3 h-3 text-indigo-600" /> Coincidencias de Clientes ({clientSuggestions.length})
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowClientSuggestions(false)}
+                                                            className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
+                                                        >
+                                                            Cerrar
+                                                        </button>
+                                                    </div>
+                                                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
+                                                        {clientSuggestions.map((c) => {
+                                                            const normTyped = removeAccents(clientName.trim().toUpperCase());
+                                                            const normName = removeAccents(c.name.trim().toUpperCase());
+                                                            const isExact = normName === normTyped;
+
+                                                            return (
+                                                                <div
+                                                                    key={c.id}
+                                                                    className="p-3 bg-white rounded-xl shadow-2xs hover:bg-indigo-50/40 transition-colors flex flex-col gap-2 border border-slate-100"
+                                                                >
+                                                                    {/* Nombre Completo */}
+                                                                    <div className="flex items-start gap-2.5">
+                                                                        <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs flex-shrink-0 mt-0.5 shadow-2xs">
+                                                                            {c.name.charAt(0)}
+                                                                        </div>
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <p className="font-black text-slate-900 text-xs uppercase leading-snug break-words whitespace-normal tracking-tight">
+                                                                                {c.name}
+                                                                            </p>
+                                                                            {isExact && (
+                                                                                <span className="inline-block mt-0.5 bg-amber-100 text-amber-800 text-[8.5px] px-2 py-0.5 rounded-full font-black uppercase">
+                                                                                    Coincidencia Exacta
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Domicilio, Celular, Supervisora */}
+                                                                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100/80 text-[10px] space-y-1 text-slate-600">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <MapPin className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                                                            <span className="font-semibold text-slate-500 uppercase">Dom:</span>
+                                                                            <span className="font-bold text-slate-800 uppercase break-words flex-1">{c.address || 'Sin domicilio'}</span>
+                                                                        </div>
+                                                                        <div className="grid grid-cols-2 gap-2 pt-0.5">
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <Smartphone className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                                                                <span className="font-semibold text-slate-500 uppercase">Cel:</span>
+                                                                                <span className="font-bold text-slate-800 font-mono">{c.cellphone || 'Sin celular'}</span>
+                                                                            </div>
+                                                                            <div className="flex items-center gap-1.5">
+                                                                                <User className="w-3 h-3 text-indigo-500 flex-shrink-0" />
+                                                                                <span className="font-semibold text-slate-500 uppercase">Sup:</span>
+                                                                                <span className="font-black text-indigo-700 uppercase truncate">{c.supervisorName}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Botones */}
+                                                                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100/80">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setClientName(c.name);
+                                                                                setShowClientSuggestions(false);
+                                                                            }}
+                                                                            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase transition-colors"
+                                                                        >
+                                                                            Usar
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setClientName(c.name);
+                                                                                setShowClientSuggestions(false);
+                                                                                handleSelectRenewalClient(c);
+                                                                            }}
+                                                                            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs flex items-center gap-1.5"
+                                                                        >
+                                                                            <RefreshCw className="w-3.5 h-3.5" />
+                                                                            Renovar
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                         <input type="text" value={clientAddress} onChange={e => setClientAddress(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow uppercase" placeholder="Domicilio" />
                                         <div className="grid grid-cols-2 gap-3">
                                             <input type="number" inputMode="numeric" value={creditAmount} onChange={e => setCreditAmount(e.target.value)} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-indigo-500 outline-none transition-shadow" placeholder="Monto $" />
@@ -3226,49 +3601,95 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                             </label>
                                         </div>
 
-                                        {aval1IsClient && (
-                                            <div className="space-y-2 animate-in fade-in zoom-in-95 duration-200">
-                                                <div className="relative">
-                                                    <input
-                                                        type="text"
-                                                        value={aval1Search}
-                                                        onChange={e => setAval1Search(e.target.value)}
-                                                        className="w-full p-4 pl-10 border border-blue-200 rounded-2xl font-bold text-slate-900 bg-slate-50 placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none"
-                                                        placeholder="Buscar cliente o aval..."
-                                                    />
-                                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                                                </div>
-                                                {aval1Search.length > 0 && (
-                                                    <div className="max-h-[150px] overflow-y-auto border border-slate-100 rounded-2xl bg-white shadow-xl divide-y divide-slate-50 scrollbar-hide z-[10]">
-                                                        {financieraGuarantorCandidates
-                                                            .filter(c => c.name.toUpperCase().includes(aval1Search.toUpperCase()))
-                                                            .map((c, idx) => (
-                                                                <button
-                                                                    key={idx}
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        setAval1SelectedClient({ id: 'AUTO', name: c.name, address: c.address, cellphone: c.cellphone, facadeUrl: c.facadeUrl, clientPhotoUrl: c.photoUrl } as any);
-                                                                        setAvalName(c.name);
-                                                                        setAvalAddress(c.address || '');
-                                                                        setAvalCellphone(c.cellphone || '');
-                                                                        if (c.facadeUrl) setAvalFacadePreview(c.facadeUrl);
-                                                                        if (c.photoUrl) setAvalPhotoPreview(c.photoUrl);
-                                                                        setAval1Search('');
-                                                                    }}
-                                                                    className="w-full p-3 text-left hover:bg-blue-50 transition-colors flex items-center justify-between group"
-                                                                >
-                                                                    <div className="flex flex-col">
-                                                                        <span className="font-black text-slate-800 text-[10px] uppercase">{c.name}</span>
-                                                                        <span className="text-[8px] text-slate-400 font-mono">{c.cellphone}</span>
-                                                                    </div>
-                                                                    <UserCheck className="w-4 h-4 text-slate-300 group-hover:text-blue-500 transition-colors" />
-                                                                </button>
-                                                            ))}
+                                        <div className="relative">
+                                            <input
+                                                type="text"
+                                                value={avalName}
+                                                onChange={e => {
+                                                    const val = removeAccents(e.target.value).toUpperCase();
+                                                    setAvalName(val);
+                                                    if (aval1IsClient) setAval1IsClient(false);
+                                                    setIgnoredAvalNames([]);
+                                                    setShowAvalSuggestions(true);
+                                                }}
+                                                onFocus={() => setShowAvalSuggestions(true)}
+                                                className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                                                placeholder="Nombre completo"
+                                            />
+
+                                            {/* DROPDOWN DE COINCIDENCIAS PARA AVAL EN EDICIÓN */}
+                                            {showAvalSuggestions && avalSuggestions.length > 0 && (
+                                                <div className="absolute z-[60] left-0 right-0 top-full mt-1 bg-white border border-blue-100 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                                                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 px-4 py-2 border-b border-blue-100 flex items-center justify-between">
+                                                        <span className="text-[10px] font-black text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                                                            <UserCheck className="w-3 h-3 text-blue-600" /> Coincidencias de Avales ({avalSuggestions.length})
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowAvalSuggestions(false)}
+                                                            className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
+                                                        >
+                                                            Cerrar
+                                                        </button>
                                                     </div>
-                                                )}
-                                            </div>
-                                        )}
-                                        <input type="text" value={avalName} onChange={e => { setAvalName(removeAccents(e.target.value).toUpperCase()); setIgnoredAvalNames([]); }} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Nombre completo" />
+                                                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
+                                                        {avalSuggestions.map((c) => (
+                                                            <div
+                                                                key={c.id}
+                                                                className="p-3 bg-white rounded-xl shadow-2xs hover:bg-blue-50/40 transition-colors flex flex-col gap-2 border border-slate-100"
+                                                            >
+                                                                {/* Nombre del Aval */}
+                                                                <div className="flex items-start gap-2.5">
+                                                                    <div className="w-7 h-7 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-xs flex-shrink-0 mt-0.5 shadow-2xs">
+                                                                        {c.name.charAt(0)}
+                                                                    </div>
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <p className="font-black text-slate-900 text-xs uppercase leading-snug break-words whitespace-normal tracking-tight">
+                                                                            {c.name}
+                                                                        </p>
+                                                                        <span className="inline-block mt-0.5 text-[8.5px] font-extrabold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase border border-blue-100">
+                                                                            Aval Registrado
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Domicilio del Aval, Celular del Aval, Supervisora */}
+                                                                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100/80 text-[10px] space-y-1 text-slate-600">
+                                                                    <div className="flex items-center gap-1.5">
+                                                                        <MapPin className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                                                        <span className="font-semibold text-slate-500 uppercase">Dom:</span>
+                                                                        <span className="font-bold text-slate-800 uppercase break-words flex-1">{c.address || 'Sin domicilio'}</span>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-2 gap-2 pt-0.5">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <Smartphone className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                                                                            <span className="font-semibold text-slate-500 uppercase">Cel:</span>
+                                                                            <span className="font-bold text-slate-800 font-mono">{c.cellphone || 'Sin celular'}</span>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <User className="w-3 h-3 text-blue-500 flex-shrink-0" />
+                                                                            <span className="font-semibold text-slate-500 uppercase">Sup:</span>
+                                                                            <span className="font-black text-blue-700 uppercase truncate">{c.supervisorName}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* Botón */}
+                                                                <div className="flex items-center justify-end pt-1 border-t border-slate-100/80">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleSelectAvalCandidate(c.sourceClient, c.name, c.address, c.cellphone)}
+                                                                        className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs text-center"
+                                                                    >
+                                                                        Usar este Aval
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                         <input type="text" value={avalAddress} onChange={e => setAvalAddress(e.target.value.toUpperCase())} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase" placeholder="Domicilio completo" />
                                         <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={10} value={avalCellphone} onChange={e => setAvalCellphone(e.target.value.replace(/\D/g, ''))} className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none" placeholder="Celular" />
 
