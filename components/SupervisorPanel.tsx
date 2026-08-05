@@ -123,7 +123,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 const normName = removeAccents(c.name.trim().toUpperCase());
                 return normName.includes(norm);
             })
-            .slice(0, 6)
+            .slice(0, 30)
             .map(c => {
                 const supName = allSupervisors.find(s => s.id === c.supervisorId)?.name || supervisor.name || 'S/S';
                 return {
@@ -206,7 +206,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             }
         });
 
-        return Array.from(candidateMap.values()).slice(0, 6);
+        return Array.from(candidateMap.values()).slice(0, 30);
     }, [avalName, clients, allSupervisors, supervisor]);
 
     const [aval2Name, setAval2Name] = useState('');
@@ -2051,7 +2051,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                     </div>
                                                 </div>
                                                 <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
-                                                    {clientSuggestions.map((c) => {
+                                                    {clientSuggestions.slice(0, 5).map((c) => {
                                                         const normTyped = removeAccents(clientName.trim().toUpperCase());
                                                         const normName = removeAccents(c.name.trim().toUpperCase());
                                                         const isExact = normName === normTyped;
@@ -2334,7 +2334,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                 </div>
                                             </div>
                                             <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
-                                                {avalSuggestions.map((c) => (
+                                                {avalSuggestions.slice(0, 5).map((c) => (
                                                     <div
                                                         key={c.id}
                                                         className="p-3 bg-white rounded-xl shadow-2xs hover:bg-blue-50/40 transition-colors flex flex-col gap-2 border border-slate-100"
@@ -2828,7 +2828,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                             </div>
 
                             {/* Content List */}
-                            <div className="p-4 overflow-y-auto space-y-3 flex-1 bg-slate-50">
+                            <div className="p-3 overflow-y-auto space-y-1.5 flex-1 bg-slate-50/70">
                                 {fullScreenCoincidences === 'client' ? (
                                     clientSuggestions.length === 0 ? (
                                         <p className="text-center text-slate-400 font-bold uppercase py-8 text-xs">No hay coincidencias de clientes</p>
@@ -2841,45 +2841,30 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                             return (
                                                 <div
                                                     key={c.id}
-                                                    className="p-4 bg-white rounded-2xl shadow-xs hover:shadow-md transition-all flex flex-col gap-3 border border-slate-200"
+                                                    className="p-2.5 px-3 bg-white rounded-xl shadow-2xs hover:border-indigo-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2 border border-slate-200/80"
                                                 >
-                                                    <div className="flex items-start gap-3">
-                                                        <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-sm flex-shrink-0 mt-0.5 shadow-2xs">
-                                                            {c.name.charAt(0)}
-                                                        </div>
-                                                        <div className="min-w-0 flex-1">
-                                                            <p className="font-black text-slate-900 text-sm uppercase leading-snug break-words whitespace-normal tracking-tight">
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="w-5 h-5 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-[10px] flex-shrink-0">
+                                                                {c.name.charAt(0)}
+                                                            </span>
+                                                            <p className="font-black text-slate-900 text-xs uppercase leading-tight break-words tracking-tight">
                                                                 {c.name}
                                                             </p>
                                                             {isExact && (
-                                                                <span className="inline-block mt-1 bg-amber-100 text-amber-800 text-[9px] px-2 py-0.5 rounded-full font-black uppercase">
-                                                                    Coincidencia Exacta
+                                                                <span className="bg-amber-100 text-amber-800 text-[8px] px-1.5 py-0.5 rounded font-black uppercase">
+                                                                    Igual
                                                                 </span>
                                                             )}
                                                         </div>
-                                                    </div>
-
-                                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1.5 text-slate-600">
-                                                        <div className="flex items-center gap-2">
-                                                            <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                                                            <span className="font-bold text-slate-500 uppercase text-[10px]">Domicilio:</span>
-                                                            <span className="font-bold text-slate-800 uppercase break-words flex-1">{c.address || 'Sin domicilio registrado'}</span>
-                                                        </div>
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                                                            <div className="flex items-center gap-2">
-                                                                <Smartphone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                                                                <span className="font-bold text-slate-500 uppercase text-[10px]">Celular:</span>
-                                                                <span className="font-bold text-slate-800 font-mono">{c.cellphone || 'Sin celular'}</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <User className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
-                                                                <span className="font-bold text-slate-500 uppercase text-[10px]">Supervisora:</span>
-                                                                <span className="font-black text-indigo-700 uppercase">{c.supervisorName}</span>
-                                                            </div>
+                                                        <div className="text-[10px] text-slate-500 font-semibold flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 pl-7">
+                                                            <span><strong className="text-slate-400">Dom:</strong> {c.address || 'Sin dom.'}</span>
+                                                            <span><strong className="text-slate-400">Cel:</strong> {c.cellphone || 'Sin cel.'}</span>
+                                                            <span className="text-indigo-700 font-bold"><strong className="text-slate-400">Sup:</strong> {c.supervisorName}</span>
                                                         </div>
                                                     </div>
 
-                                                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                                                    <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-center pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100 w-full sm:w-auto justify-end">
                                                         <button
                                                             type="button"
                                                             onClick={() => {
@@ -2887,9 +2872,9 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                                 setShowClientSuggestions(false);
                                                                 setFullScreenCoincidences(null);
                                                             }}
-                                                            className="flex-1 sm:flex-none px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-xs uppercase transition-colors text-center"
+                                                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-black text-[10px] uppercase transition-colors"
                                                         >
-                                                            Usar este Nombre
+                                                            Usar
                                                         </button>
                                                         <button
                                                             type="button"
@@ -2899,10 +2884,10 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                                 setFullScreenCoincidences(null);
                                                                 handleSelectRenewalClient(c);
                                                             }}
-                                                            className="flex-1 sm:flex-none px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs uppercase transition-colors shadow-md flex items-center justify-center gap-1.5"
+                                                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-black text-[10px] uppercase transition-colors shadow-2xs flex items-center gap-1"
                                                         >
-                                                            <RefreshCw className="w-4 h-4" />
-                                                            Renovar Cliente
+                                                            <RefreshCw className="w-3 h-3" />
+                                                            Renovar
                                                         </button>
                                                     </div>
                                                 </div>
@@ -2916,50 +2901,35 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                         avalSuggestions.map((c) => (
                                             <div
                                                 key={c.id}
-                                                className="p-4 bg-white rounded-2xl shadow-xs hover:shadow-md transition-all flex flex-col gap-3 border border-slate-200"
+                                                className="p-2.5 px-3 bg-white rounded-xl shadow-2xs hover:border-blue-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2 border border-slate-200/80"
                                             >
-                                                <div className="flex items-start gap-3">
-                                                    <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-sm flex-shrink-0 mt-0.5 shadow-2xs">
-                                                        {c.name.charAt(0)}
-                                                    </div>
-                                                    <div className="min-w-0 flex-1">
-                                                        <p className="font-black text-slate-900 text-sm uppercase leading-snug break-words whitespace-normal tracking-tight">
+                                                <div className="min-w-0 flex-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-[10px] flex-shrink-0">
+                                                            {c.name.charAt(0)}
+                                                        </span>
+                                                        <p className="font-black text-slate-900 text-xs uppercase leading-tight break-words tracking-tight">
                                                             {c.name}
                                                         </p>
-                                                        <span className="inline-block mt-1 text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase border border-blue-100">
-                                                            Aval Registrado
+                                                        <span className="bg-blue-50 text-blue-700 border border-blue-100 text-[8px] px-1.5 py-0.5 rounded font-black uppercase">
+                                                            Aval
                                                         </span>
                                                     </div>
-                                                </div>
-
-                                                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1.5 text-slate-600">
-                                                    <div className="flex items-center gap-2">
-                                                        <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                                                        <span className="font-bold text-slate-500 uppercase text-[10px]">Domicilio del Aval:</span>
-                                                        <span className="font-bold text-slate-800 uppercase break-words flex-1">{c.address || 'Sin domicilio registrado'}</span>
-                                                    </div>
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                                                        <div className="flex items-center gap-2">
-                                                            <Smartphone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
-                                                            <span className="font-bold text-slate-500 uppercase text-[10px]">Celular:</span>
-                                                            <span className="font-bold text-slate-800 font-mono">{c.cellphone || 'Sin celular'}</span>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <User className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
-                                                            <span className="font-bold text-slate-500 uppercase text-[10px]">Supervisora:</span>
-                                                            <span className="font-black text-blue-700 uppercase">{c.supervisorName}</span>
-                                                        </div>
+                                                    <div className="text-[10px] text-slate-500 font-semibold flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-1 pl-7">
+                                                        <span><strong className="text-slate-400">Dom:</strong> {c.address || 'Sin dom.'}</span>
+                                                        <span><strong className="text-slate-400">Cel:</strong> {c.cellphone || 'Sin cel.'}</span>
+                                                        <span className="text-blue-700 font-bold"><strong className="text-slate-400">Sup:</strong> {c.supervisorName}</span>
                                                     </div>
                                                 </div>
 
-                                                <div className="flex items-center justify-end pt-1 border-t border-slate-100">
+                                                <div className="flex items-center gap-1.5 flex-shrink-0 self-end sm:self-center pt-1 sm:pt-0 border-t sm:border-t-0 border-slate-100 w-full sm:w-auto justify-end">
                                                     <button
                                                         type="button"
                                                         onClick={() => {
                                                             handleSelectAvalCandidate(c.sourceClient, c.name, c.address, c.cellphone);
                                                             setFullScreenCoincidences(null);
                                                         }}
-                                                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs uppercase transition-colors shadow-md text-center"
+                                                        className="w-full sm:w-auto px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-black text-[10px] uppercase transition-colors shadow-2xs text-center"
                                                     >
                                                         Usar este Aval
                                                     </button>
@@ -3595,7 +3565,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                         </div>
                                                     </div>
                                                     <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
-                                                        {clientSuggestions.map((c) => {
+                                                        {clientSuggestions.slice(0, 5).map((c) => {
                                                             const normTyped = removeAccents(clientName.trim().toUpperCase());
                                                             const normName = removeAccents(c.name.trim().toUpperCase());
                                                             const isExact = normName === normTyped;
@@ -3868,7 +3838,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                         </div>
                                                     </div>
                                                     <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
-                                                        {avalSuggestions.map((c) => (
+                                                        {avalSuggestions.slice(0, 5).map((c) => (
                                                             <div
                                                                 key={c.id}
                                                                 className="p-3 bg-white rounded-xl shadow-2xs hover:bg-blue-50/40 transition-colors flex flex-col gap-2 border border-slate-100"
