@@ -6,7 +6,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const versionFilePath = path.join(__dirname, 'version.ts');
-let currentVersion = "3.80";
+let currentVersion = "5.30";
 
 if (fs.existsSync(versionFilePath)) {
   const content = fs.readFileSync(versionFilePath, 'utf8');
