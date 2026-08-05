@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Supervisor, Client, Visit, Guarantee, SystemSettings, WorkWeek, Financiera, GuarantorRange, Guarantor } from '../types';
-import { Scan, MapPin, Camera, Check, X, Loader2, RefreshCw, UploadCloud, Map as MapIcon, User, Clock, CheckCircle, Home, Plus, Archive, Trash2, Lock, Smartphone, DollarSign, UserCheck, Users, QrCode, ChevronDown, ChevronUp, Calendar, Hash, Phone, History, Navigation, Package, Pencil, AlertTriangle, MessageSquare, Save, Search, ShieldCheck, ShieldAlert, Monitor, Image as LucideImage, Eye, UserMinus } from 'lucide-react';
+import { Scan, MapPin, Camera, Check, X, Loader2, RefreshCw, UploadCloud, Map as MapIcon, User, Clock, CheckCircle, Home, Plus, Archive, Trash2, Lock, Smartphone, DollarSign, UserCheck, Users, QrCode, ChevronDown, ChevronUp, Calendar, Hash, Phone, History, Navigation, Package, Pencil, AlertTriangle, MessageSquare, Save, Search, ShieldCheck, ShieldAlert, Monitor, Image as LucideImage, Eye, UserMinus, Maximize2 } from 'lucide-react';
 import { storage, db } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { query, collection, where, getDocs, limit } from 'firebase/firestore';
@@ -103,6 +103,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const [clientName, setClientName] = useState('');
     const [showClientSuggestions, setShowClientSuggestions] = useState(false);
     const [showAvalSuggestions, setShowAvalSuggestions] = useState(false);
+    const [fullScreenCoincidences, setFullScreenCoincidences] = useState<'client' | 'aval' | null>(null);
     const [clientAddress, setClientAddress] = useState('');
     const [creditAmount, setCreditAmount] = useState('');
     const [cellphone, setCellphone] = useState('');
@@ -2030,13 +2031,24 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                     <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
                                                         <User className="w-3 h-3 text-indigo-600" /> Coincidencias de Clientes ({clientSuggestions.length})
                                                     </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setShowClientSuggestions(false)}
-                                                        className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
-                                                    >
-                                                        Cerrar
-                                                    </button>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setFullScreenCoincidences('client')}
+                                                            className="px-2 py-0.5 bg-indigo-100/80 hover:bg-indigo-200 text-indigo-700 rounded-lg transition-colors flex items-center gap-1 text-[9px] font-black uppercase shadow-2xs"
+                                                            title="Pantalla Completa"
+                                                        >
+                                                            <Maximize2 className="w-3 h-3" />
+                                                            <span>Ampliar</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setShowClientSuggestions(false)}
+                                                            className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
+                                                        >
+                                                            Cerrar
+                                                        </button>
+                                                    </div>
                                                 </div>
                                                 <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
                                                     {clientSuggestions.map((c) => {
@@ -2302,13 +2314,24 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                 <span className="text-[10px] font-black text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
                                                     <UserCheck className="w-3 h-3 text-blue-600" /> Coincidencias de Avales ({avalSuggestions.length})
                                                 </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowAvalSuggestions(false)}
-                                                    className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
-                                                >
-                                                    Cerrar
-                                                </button>
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setFullScreenCoincidences('aval')}
+                                                        className="px-2 py-0.5 bg-blue-100/80 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors flex items-center gap-1 text-[9px] font-black uppercase shadow-2xs"
+                                                        title="Pantalla Completa"
+                                                    >
+                                                        <Maximize2 className="w-3 h-3" />
+                                                        <span>Ampliar</span>
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowAvalSuggestions(false)}
+                                                        className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
+                                                    >
+                                                        Cerrar
+                                                    </button>
+                                                </div>
                                             </div>
                                             <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
                                                 {avalSuggestions.map((c) => (
@@ -3362,13 +3385,24 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                         <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
                                                             <User className="w-3 h-3 text-indigo-600" /> Coincidencias de Clientes ({clientSuggestions.length})
                                                         </span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setShowClientSuggestions(false)}
-                                                            className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
-                                                        >
-                                                            Cerrar
-                                                        </button>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setFullScreenCoincidences('client')}
+                                                                className="px-2 py-0.5 bg-indigo-100/80 hover:bg-indigo-200 text-indigo-700 rounded-lg transition-colors flex items-center gap-1 text-[9px] font-black uppercase shadow-2xs"
+                                                                title="Pantalla Completa"
+                                                            >
+                                                                <Maximize2 className="w-3 h-3" />
+                                                                <span>Ampliar</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setShowClientSuggestions(false)}
+                                                                className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
+                                                            >
+                                                                Cerrar
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                     <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
                                                         {clientSuggestions.map((c) => {
@@ -3624,13 +3658,24 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                         <span className="text-[10px] font-black text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
                                                             <UserCheck className="w-3 h-3 text-blue-600" /> Coincidencias de Avales ({avalSuggestions.length})
                                                         </span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setShowAvalSuggestions(false)}
-                                                            className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
-                                                        >
-                                                            Cerrar
-                                                        </button>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setFullScreenCoincidences('aval')}
+                                                                className="px-2 py-0.5 bg-blue-100/80 hover:bg-blue-200 text-blue-700 rounded-lg transition-colors flex items-center gap-1 text-[9px] font-black uppercase shadow-2xs"
+                                                                title="Pantalla Completa"
+                                                            >
+                                                                <Maximize2 className="w-3 h-3" />
+                                                                <span>Ampliar</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setShowAvalSuggestions(false)}
+                                                                className="text-[9px] font-bold text-slate-400 hover:text-slate-600 uppercase"
+                                                            >
+                                                                Cerrar
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                     <div className="max-h-64 overflow-y-auto divide-y divide-slate-100 bg-slate-50/50 p-1.5 space-y-1">
                                                         {avalSuggestions.map((c) => (
