@@ -2784,6 +2784,196 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 )}
             </AnimatePresence>
 
+            {/* MODAL COINCIDENCIAS PANTALLA COMPLETA */}
+            <AnimatePresence>
+                {fullScreenCoincidences && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-3 sm:p-6 backdrop-blur-md"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.95, y: 20 }}
+                            className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden border border-slate-200"
+                        >
+                            {/* Header */}
+                            <div className={`p-4 sm:p-5 flex items-center justify-between text-white ${fullScreenCoincidences === 'client' ? 'bg-gradient-to-r from-indigo-600 to-purple-600' : 'bg-gradient-to-r from-blue-600 to-indigo-600'}`}>
+                                <div className="flex items-center gap-3">
+                                    {fullScreenCoincidences === 'client' ? (
+                                        <User className="w-6 h-6 text-white" />
+                                    ) : (
+                                        <UserCheck className="w-6 h-6 text-white" />
+                                    )}
+                                    <div>
+                                        <h3 className="font-black uppercase text-sm sm:text-base tracking-tight">
+                                            {fullScreenCoincidences === 'client'
+                                                ? `Coincidencias de Clientes Encontradas (${clientSuggestions.length})`
+                                                : `Coincidencias de Avales Encontradas (${avalSuggestions.length})`}
+                                        </h3>
+                                        <p className="text-[10px] text-white/80 font-medium">
+                                            Vista ampliada en pantalla completa
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setFullScreenCoincidences(null)}
+                                    className="p-2 rounded-full hover:bg-white/20 transition-colors text-white"
+                                >
+                                    <X className="w-6 h-6" />
+                                </button>
+                            </div>
+
+                            {/* Content List */}
+                            <div className="p-4 overflow-y-auto space-y-3 flex-1 bg-slate-50">
+                                {fullScreenCoincidences === 'client' ? (
+                                    clientSuggestions.length === 0 ? (
+                                        <p className="text-center text-slate-400 font-bold uppercase py-8 text-xs">No hay coincidencias de clientes</p>
+                                    ) : (
+                                        clientSuggestions.map((c) => {
+                                            const normTyped = removeAccents(clientName.trim().toUpperCase());
+                                            const normName = removeAccents(c.name.trim().toUpperCase());
+                                            const isExact = normName === normTyped;
+
+                                            return (
+                                                <div
+                                                    key={c.id}
+                                                    className="p-4 bg-white rounded-2xl shadow-xs hover:shadow-md transition-all flex flex-col gap-3 border border-slate-200"
+                                                >
+                                                    <div className="flex items-start gap-3">
+                                                        <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-sm flex-shrink-0 mt-0.5 shadow-2xs">
+                                                            {c.name.charAt(0)}
+                                                        </div>
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="font-black text-slate-900 text-sm uppercase leading-snug break-words whitespace-normal tracking-tight">
+                                                                {c.name}
+                                                            </p>
+                                                            {isExact && (
+                                                                <span className="inline-block mt-1 bg-amber-100 text-amber-800 text-[9px] px-2 py-0.5 rounded-full font-black uppercase">
+                                                                    Coincidencia Exacta
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1.5 text-slate-600">
+                                                        <div className="flex items-center gap-2">
+                                                            <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                                                            <span className="font-bold text-slate-500 uppercase text-[10px]">Domicilio:</span>
+                                                            <span className="font-bold text-slate-800 uppercase break-words flex-1">{c.address || 'Sin domicilio registrado'}</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <Smartphone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                                                                <span className="font-bold text-slate-500 uppercase text-[10px]">Celular:</span>
+                                                                <span className="font-bold text-slate-800 font-mono">{c.cellphone || 'Sin celular'}</span>
+                                                            </div>
+                                                            <div className="flex items-center gap-2">
+                                                                <User className="w-3.5 h-3.5 text-indigo-500 flex-shrink-0" />
+                                                                <span className="font-bold text-slate-500 uppercase text-[10px]">Supervisora:</span>
+                                                                <span className="font-black text-indigo-700 uppercase">{c.supervisorName}</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setClientName(c.name);
+                                                                setShowClientSuggestions(false);
+                                                                setFullScreenCoincidences(null);
+                                                            }}
+                                                            className="flex-1 sm:flex-none px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-xs uppercase transition-colors text-center"
+                                                        >
+                                                            Usar este Nombre
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setClientName(c.name);
+                                                                setShowClientSuggestions(false);
+                                                                setFullScreenCoincidences(null);
+                                                                handleSelectRenewalClient(c);
+                                                            }}
+                                                            className="flex-1 sm:flex-none px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs uppercase transition-colors shadow-md flex items-center justify-center gap-1.5"
+                                                        >
+                                                            <RefreshCw className="w-4 h-4" />
+                                                            Renovar Cliente
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })
+                                    )
+                                ) : (
+                                    avalSuggestions.length === 0 ? (
+                                        <p className="text-center text-slate-400 font-bold uppercase py-8 text-xs">No hay coincidencias de avales</p>
+                                    ) : (
+                                        avalSuggestions.map((c) => (
+                                            <div
+                                                key={c.id}
+                                                className="p-4 bg-white rounded-2xl shadow-xs hover:shadow-md transition-all flex flex-col gap-3 border border-slate-200"
+                                            >
+                                                <div className="flex items-start gap-3">
+                                                    <div className="w-9 h-9 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-black text-sm flex-shrink-0 mt-0.5 shadow-2xs">
+                                                        {c.name.charAt(0)}
+                                                    </div>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="font-black text-slate-900 text-sm uppercase leading-snug break-words whitespace-normal tracking-tight">
+                                                            {c.name}
+                                                        </p>
+                                                        <span className="inline-block mt-1 text-[9px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full uppercase border border-blue-100">
+                                                            Aval Registrado
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 text-xs space-y-1.5 text-slate-600">
+                                                    <div className="flex items-center gap-2">
+                                                        <MapPin className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                                                        <span className="font-bold text-slate-500 uppercase text-[10px]">Domicilio del Aval:</span>
+                                                        <span className="font-bold text-slate-800 uppercase break-words flex-1">{c.address || 'Sin domicilio registrado'}</span>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                                        <div className="flex items-center gap-2">
+                                                            <Smartphone className="w-3.5 h-3.5 text-slate-400 flex-shrink-0" />
+                                                            <span className="font-bold text-slate-500 uppercase text-[10px]">Celular:</span>
+                                                            <span className="font-bold text-slate-800 font-mono">{c.cellphone || 'Sin celular'}</span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <User className="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+                                                            <span className="font-bold text-slate-500 uppercase text-[10px]">Supervisora:</span>
+                                                            <span className="font-black text-blue-700 uppercase">{c.supervisorName}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center justify-end pt-1 border-t border-slate-100">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            handleSelectAvalCandidate(c.sourceClient, c.name, c.address, c.cellphone);
+                                                            setFullScreenCoincidences(null);
+                                                        }}
+                                                        className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs uppercase transition-colors shadow-md text-center"
+                                                    >
+                                                        Usar este Aval
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )
+                                )}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* MODAL COINCIDENCIA DE NOMBRE */}
             <AnimatePresence>
                 {coincidenceClient && (
