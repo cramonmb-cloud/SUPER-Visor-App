@@ -825,13 +825,34 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 clientPhotoUrl = await getDownloadURL(clientSnapshot.ref);
             }
 
+            // Upload Aval Facade if provided
+            let avalFacadeUrl = isRenewalMode && avalFacadePreview && !avalFacadeFile ? avalFacadePreview : '';
+            if (avalFacadeFile) {
+                const compressed = await compressImage(avalFacadeFile);
+                const avalFacadeRef = ref(storage, `aval_facades/${scannedCode}_${Date.now()}.jpg`);
+                const avalFacadeSnapshot = await uploadBytes(avalFacadeRef, compressed);
+                avalFacadeUrl = await getDownloadURL(avalFacadeSnapshot.ref);
+            }
+
+            // Upload Aval Photo if provided
+            let avalPhotoUrl = isRenewalMode && avalPhotoPreview && !avalPhotoFile ? avalPhotoPreview : '';
+            if (avalPhotoFile) {
+                const compressed = await compressImage(avalPhotoFile);
+                const avalPhotoRef = ref(storage, `aval_photos/${scannedCode}_${Date.now()}.jpg`);
+                const avalPhotoSnapshot = await uploadBytes(avalPhotoRef, compressed);
+                avalPhotoUrl = await getDownloadURL(avalPhotoSnapshot.ref);
+            }
+
+            const finalAval1FacadeUrl = avalFacadeUrl || (aval1IsClient ? (aval1SelectedClient?.facadeUrl || '') : '');
+            const finalAval1PhotoUrl = avalPhotoUrl || (aval1IsClient ? (aval1SelectedClient?.clientPhotoUrl || '') : '');
+
             const currentAvales: Guarantor[] = [
                 {
                     name: avalName.toUpperCase(),
                     address: avalAddress.toUpperCase(),
                     cellphone: avalCellphone,
-                    facadeUrl: aval1IsClient ? (aval1SelectedClient?.facadeUrl || '') : '',
-                    photoUrl: aval1IsClient ? (aval1SelectedClient?.clientPhotoUrl || '') : '',
+                    facadeUrl: finalAval1FacadeUrl,
+                    photoUrl: finalAval1PhotoUrl,
                     guarantees: aval1Guarantees.map(g => ({ description: g.toUpperCase() }))
                 }
             ];
@@ -854,12 +875,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 });
             }
 
-            const isComplete =
-                (!requireFacade || !!facadeUrl) &&
-                (!requireClientPhoto || !!clientPhotoUrl) &&
-                (guarantees.length >= (supervisorFinanciera?.minGuarantees || 0));
-
-            await onRegisterClient(scannedCode, {
+            const clientDataToRegister: Partial<Client> = {
                 name: clientName.toUpperCase(),
                 address: clientAddress.toUpperCase(),
                 creditAmount: Number(creditAmount),
@@ -870,14 +886,28 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 avalName: avalName.toUpperCase(),
                 avalAddress: avalAddress.toUpperCase(),
                 avalCellphone,
+                avalFacadeUrl: finalAval1FacadeUrl,
+                avalPhotoUrl: finalAval1PhotoUrl,
                 avales: currentAvales,
                 latitude: loc.lat,
                 longitude: loc.lng,
                 comments: clientComments.toUpperCase() // NEW: Include comments
-            }, isRenewalMode, false, renewalSourceClientId || undefined); // ALWAYS record a visit upon registration
+            };
+
+            const registeredClientObj: Client = {
+                id: scannedCode,
+                ...clientDataToRegister,
+                supervisorId: supervisor.id,
+                financieraId: supervisor.financieraId || ''
+            } as Client;
+
+            const completion = checkClientCompleteness(registeredClientObj, supervisorFinanciera);
+            const isComplete = completion.isComplete;
+
+            await onRegisterClient(scannedCode, clientDataToRegister, isRenewalMode, false, renewalSourceClientId || undefined); // ALWAYS record a visit upon registration
 
             if (!isComplete) {
-                alert("Registro guardado como PENDIENTE. Faltan fotos o datos obligatorios según la financiera.");
+                alert(`Registro guardado como PENDIENTE. Faltan datos obligatorios según la financiera: ${completion.missing.join(', ')}`);
             } else {
                 alert("Registro completado exitosamente");
             }
@@ -1085,8 +1115,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         // Set previews if they exist
         setFacadePreview(client.facadeUrl || null);
         setClientPhotoPreview(client.clientPhotoUrl || null);
-        setAvalFacadePreview(client.avalFacadeUrl || null);
-        setAvalPhotoPreview(client.avalPhotoUrl || null);
+        setAvalFacadePreview(client.avalFacadeUrl || (client.avales?.[0]?.facadeUrl || null));
+        setAvalPhotoPreview(client.avalPhotoUrl || (client.avales?.[0]?.photoUrl || null));
     };
 
     const resetForm = () => {
@@ -1144,18 +1174,40 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         } catch (e) { alert("Error al actualizar comentarios"); } finally { setIsUploading(false); }
     };
 
-    const handleUpdatePhoto = async (clientId: string, type: 'facadeUrl' | 'clientPhotoUrl' | 'avalFacadeUrl', file: File) => {
+    const handleUpdatePhoto = async (clientId: string, type: 'facadeUrl' | 'clientPhotoUrl' | 'avalFacadeUrl' | 'avalPhotoUrl', file: File, avalIndex: number = 0) => {
         setIsUploading(true);
         try {
             const compressedFile = await compressImage(file);
             const photoRef = ref(storage, `photos/${clientId}_${type}_${Date.now()}.jpg`);
             const snapshot = await uploadBytes(photoRef, compressedFile);
             const url = await getDownloadURL(snapshot.ref);
-            await onUpdateClient(clientId, { [type]: url });
+            
+            const clientToUpdate = clients.find(c => c.id === clientId) || selectedClientHistory;
+            const updates: Partial<Client> = { [type]: url };
+
+            if (type === 'avalFacadeUrl' || type === 'avalPhotoUrl') {
+                if (clientToUpdate?.avales && clientToUpdate.avales.length > 0) {
+                    const updatedAvales = [...clientToUpdate.avales];
+                    if (updatedAvales[avalIndex]) {
+                        updatedAvales[avalIndex] = {
+                            ...updatedAvales[avalIndex],
+                            facadeUrl: type === 'avalFacadeUrl' ? url : updatedAvales[avalIndex].facadeUrl,
+                            photoUrl: type === 'avalPhotoUrl' ? url : updatedAvales[avalIndex].photoUrl
+                        };
+                    }
+                    updates.avales = updatedAvales;
+                }
+            }
+
+            await onUpdateClient(clientId, updates);
 
             // Update local state if the modal is open
             if (selectedClientHistory && selectedClientHistory.id === clientId) {
-                setSelectedClientHistory({ ...selectedClientHistory, [type]: url });
+                setSelectedClientHistory({ 
+                    ...selectedClientHistory, 
+                    ...updates,
+                    [type]: url 
+                });
             }
             alert("Foto actualizada correctamente");
         } catch (e) {
@@ -1373,7 +1425,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         // Inherit photos for renewal
         setFacadePreview(client.facadeUrl || null);
         setClientPhotoPreview(client.clientPhotoUrl || null);
-        setAvalFacadePreview(client.avalFacadeUrl || null);
+        setAvalFacadePreview(client.avalFacadeUrl || (client.avales?.[0]?.facadeUrl || null));
+        setAvalPhotoPreview(client.avalPhotoUrl || (client.avales?.[0]?.photoUrl || null));
 
         setIsRenewalMode(true);
     };
@@ -4421,7 +4474,15 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                     <div className="grid grid-cols-2 gap-3 pt-2">
                                                         {aval.facadeUrl && (
                                                             <div className="space-y-1.5">
-                                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Fachada</p>
+                                                                <div className="flex justify-between items-center px-1">
+                                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Fachada</p>
+                                                                    {supervisor.canEditPhotos && (
+                                                                        <label className="cursor-pointer text-[8px] font-black text-blue-600 uppercase hover:underline">
+                                                                            Editar
+                                                                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpdatePhoto(selectedClientHistory.id, 'avalFacadeUrl', e.target.files[0], idx)} />
+                                                                        </label>
+                                                                    )}
+                                                                </div>
                                                                 <div
                                                                     className="aspect-video rounded-xl overflow-hidden border border-blue-100 bg-white/80 backdrop-blur-sm cursor-pointer"
                                                                     onClick={() => setFullPhotoUrl(aval.facadeUrl || null)}
@@ -4432,7 +4493,15 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                         )}
                                                         {aval.photoUrl && (
                                                             <div className="space-y-1.5">
-                                                                <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Persona</p>
+                                                                <div className="flex justify-between items-center px-1">
+                                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest px-1">Persona</p>
+                                                                    {supervisor.canEditPhotos && (
+                                                                        <label className="cursor-pointer text-[8px] font-black text-blue-600 uppercase hover:underline">
+                                                                            Editar
+                                                                            <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => e.target.files?.[0] && handleUpdatePhoto(selectedClientHistory.id, 'avalPhotoUrl', e.target.files[0], idx)} />
+                                                                        </label>
+                                                                    )}
+                                                                </div>
                                                                 <div
                                                                     className="aspect-video rounded-xl overflow-hidden border border-blue-100 bg-white/80 backdrop-blur-sm cursor-pointer"
                                                                     onClick={() => setFullPhotoUrl(aval.photoUrl || null)}
