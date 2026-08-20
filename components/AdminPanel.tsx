@@ -9,6 +9,8 @@ import JSZip from "jszip";
 import { VisitsMap } from './VisitsMap';
 import { CachedImage } from './CachedImage';
 import { AdminPanelV2 } from './AdminPanelV2';
+import { removeAccents, getClientLoanCycle, ClientLoanCycle } from '../constants';
+import { VERSION } from '../version';
 
 interface AdminPanelProps {
   data: AppState;
@@ -45,6 +47,8 @@ interface AdminPanelProps {
   onAddApiKey: (name: string, permissions: ApiPermission[], assignedFinancieraIds: string[]) => void;
   onUpdateApiKey: (id: string, active: boolean, permissions: ApiPermission[], assignedFinancieraIds: string[]) => void;
   onDeleteApiKey: (id: string) => void;
+  onMergeClients?: (sourceOldClientId: string, targetNewClientId: string, suppressAlert?: boolean) => Promise<void>;
+  onTriggerForceUpdate?: (versionName?: string) => Promise<void>;
 }
 
 const BANNER_COLORS = [
@@ -63,6 +67,12 @@ export interface CheckClientCompletionResult {
 }
 
 export const checkClientCompleteness = (client: Client, financiera?: Financiera): CheckClientCompletionResult => {
+    if (client.isManuallyApproved) {
+        return {
+            isComplete: true,
+            missing: []
+        };
+    }
     const missing: string[] = [];
     if (!client.name || client.name.trim() === '') missing.push('Nombre');
     if (!client.address || client.address.trim() === '') missing.push('Domicilio');
@@ -166,7 +176,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [appName, setAppName] = useState(data.settings?.appName || 'SUPER VisorApp');
   const [logoUrl, setLogoUrl] = useState(data.settings?.logoUrl || '');
   const [logoGifUrl, setLogoGifUrl] = useState(data.settings?.logoGifUrl || '');
-  const [versionName, setVersionName] = useState(data.settings?.versionName || 'v5.01');
+  const [versionName, setVersionName] = useState(`v${VERSION}`);
   const [versionColor, setVersionColor] = useState(data.settings?.versionColor || '#4f46e5');
   const [footerLogoUrl, setFooterLogoUrl] = useState(data.settings?.footerLogoUrl || '');
   const [footerInfoHtml, setFooterInfoHtml] = useState(data.settings?.footerInfoHtml || '');
@@ -246,6 +256,74 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [targetMoveWeekId, setTargetMoveWeekId] = useState<string>('');
   const [showMoveFinancieraModal, setShowMoveFinancieraModal] = useState(false);
   const [targetMoveFinancieraId, setTargetMoveFinancieraId] = useState<string>('');
+  const [showMergeDuplicatesModal, setShowMergeDuplicatesModal] = useState(false);
+  const [isMergingDuplicates, setIsMergingDuplicates] = useState(false);
+
+  const duplicateClientGroups = React.useMemo(() => {
+    const map = new Map<string, Client[]>();
+    data.clients.forEach(c => {
+      if (c.isArchived) return;
+      const norm = removeAccents((c.name || '').trim().replace(/\s+/g, ' ').toUpperCase());
+      if (!norm || norm.length < 3) return;
+      const finId = c.financieraId || 'SIN_FINANCIERA';
+      const key = `${finId}:::${norm}`;
+      const list = map.get(key) || [];
+      list.push(c);
+      map.set(key, list);
+    });
+    return Array.from(map.entries())
+      .filter(([_, list]) => list.length > 1)
+      .map(([key, list]) => {
+        const finId = list[0].financieraId;
+        const finName = data.financieras.find(f => f.id === finId)?.name || 'SIN FINANCIERA';
+        return {
+          key,
+          normName: key,
+          name: list[0].name,
+          financieraId: finId,
+          financieraName: finName,
+          clients: [...list].sort((a, b) => (b.registeredAt || 0) - (a.registeredAt || 0))
+        };
+      });
+  }, [data.clients, data.financieras]);
+
+  const handleMergeAllDuplicates = async () => {
+    if (duplicateClientGroups.length === 0) return;
+    
+    const authCode = prompt("Ingresa el código de autorización para unificar TODOS los duplicados:");
+    if (!authCode) return;
+    
+    if (authCode.trim() !== '012004') {
+      alert("Código de autorización incorrecto.");
+      return;
+    }
+
+    if (!confirm(`¿Confirmas la unificación masiva de los ${duplicateClientGroups.length} grupos de duplicados detectados?\n\nTodos los registros antiguos se transferirán automáticamente al QR más reciente.`)) {
+      return;
+    }
+
+    setIsMergingDuplicates(true);
+    let mergedCount = 0;
+    try {
+      for (const group of duplicateClientGroups) {
+        const newest = group.clients[0];
+        const olderList = group.clients.slice(1);
+        for (const old of olderList) {
+          if (props.onMergeClients) {
+            await props.onMergeClients(old.id, newest.id, true);
+            mergedCount++;
+          }
+        }
+      }
+      alert(`¡Se unificaron exitosamente ${mergedCount} registros duplicados!`);
+    } catch (e: any) {
+      console.error("Error en unificación masiva:", e);
+      alert("Ocurrió un problema durante la unificación masiva: " + (e?.message || e));
+    } finally {
+      setIsMergingDuplicates(false);
+    }
+  };
+
   const [showSupModal, setShowSupModal] = useState(false);
   const [showSysUserModal, setShowSysUserModal] = useState(false);
   const [selectedSupervisorIds, setSelectedSupervisorIds] = useState<string[]>([]);
@@ -273,6 +351,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [filterSupervisorId, setFilterSupervisorId] = useState<string>('ALL');
   const [filterWeekId, setFilterWeekId] = useState<string>('CURRENT');
   const [filterFinancieraId, setFilterFinancieraId] = useState<string>('ALL');
+  const [filterClientActivity, setFilterClientActivity] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
   const [clientSearchTerm, setClientSearchTerm] = useState('');
   const [activeCompletionFilters, setActiveCompletionFilters] = useState<('COMPLETE' | 'INCOMPLETE' | 'RENEWAL')[]>([]);
   const [guarantorSearchTerm, setGuarantorSearchTerm] = useState('');
@@ -287,7 +366,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   // Reset pagination when filters change
   useEffect(() => {
     setClientsPage(1);
-  }, [clientSearchTerm, filterWeekId, filterFinancieraId, filterSupervisorId, activeCompletionFilters]);
+  }, [clientSearchTerm, filterWeekId, filterFinancieraId, filterSupervisorId, filterClientActivity, activeCompletionFilters]);
 
   useEffect(() => {
     setGuarantorsPage(1);
@@ -378,8 +457,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         address: string;
         cellphone: string;
         guarantorInstance: Guarantor;
-        clients: { id: string, name: string }[];
+        clients: { id: string; name: string; isActiveLoan: boolean; cycleLabel: string }[];
         linkedClientId?: string;
+        activeClientsCount: number;
     }> = {};
 
     // Filter clients based on current selection to build the guarantor directory contextually
@@ -422,6 +502,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     });
 
     sourceClients.forEach(client => {
+        const clientCycle = getClientLoanCycle(client, data.weeks);
+        const clientItem = {
+            id: client.id,
+            name: client.name,
+            isActiveLoan: clientCycle.isActive,
+            cycleLabel: clientCycle.cycleLabel
+        };
+
         // Collect from legacy field
         if (client.avalName) {
             const name = client.avalName.trim().toUpperCase();
@@ -438,10 +526,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                         photoUrl: client.avalPhotoUrl
                     },
                     clients: [],
+                    activeClientsCount: 0
                 };
             }
             if (!guarantorMap[name].clients.some(c => c.id === client.id)) {
-                guarantorMap[name].clients.push({ id: client.id, name: client.name });
+                guarantorMap[name].clients.push(clientItem);
             }
             if (!guarantorMap[name].address && client.avalAddress) guarantorMap[name].address = client.avalAddress;
             if (!guarantorMap[name].cellphone && client.avalCellphone) guarantorMap[name].cellphone = client.avalCellphone;
@@ -461,10 +550,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                        cellphone: aval.cellphone || '',
                        guarantorInstance: aval,
                        clients: [],
+                       activeClientsCount: 0
                    };
                }
                if (!guarantorMap[name].clients.some(c => c.id === client.id)) {
-                guarantorMap[name].clients.push({ id: client.id, name: client.name });
+                guarantorMap[name].clients.push(clientItem);
                }
                if (!guarantorMap[name].address && aval.address) guarantorMap[name].address = aval.address;
                if (!guarantorMap[name].cellphone && aval.cellphone) guarantorMap[name].cellphone = aval.cellphone;
@@ -480,16 +570,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         if (clientFound) {
             guarantorMap[name].linkedClientId = clientFound.id;
         }
+        guarantorMap[name].activeClientsCount = guarantorMap[name].clients.filter(c => c.isActiveLoan).length;
     });
 
     const result = Object.values(guarantorMap);
     
     if (guarantorsSortOrder === 'DESC') {
-        return result.sort((a,b) => b.clients.length - a.clients.length);
+        return result.sort((a,b) => (b.activeClientsCount - a.activeClientsCount) || (b.clients.length - a.clients.length));
     } else {
-        return result.sort((a,b) => a.clients.length - b.clients.length);
+        return result.sort((a,b) => (a.activeClientsCount - b.activeClientsCount) || (a.clients.length - b.clients.length));
     }
-  }, [data.clients, filterSupervisorId, filterFinancieraId, filterWeekId, guarantorsSortOrder]);
+  }, [data.clients, data.weeks, filterSupervisorId, filterFinancieraId, filterWeekId, guarantorsSortOrder]);
 
   const filteredGuarantors = uniqueGuarantors.filter(g => 
     g.name.toUpperCase().includes(guarantorSearchTerm.toUpperCase()) ||
@@ -500,7 +591,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const totalGuarantorPages = React.useMemo(() => {
     if (guarantorsPerPage === 'ALL') return 1;
     return Math.ceil(filteredGuarantors.length / (guarantorsPerPage as number));
-  }, [filteredGuarantors.length, guarantorsPerPage]);
+  }, [filteredGuarantors, guarantorsPerPage]);
 
   const paginatedGuarantors = React.useMemo(() => {
     if (guarantorsPerPage === 'ALL') return filteredGuarantors;
@@ -516,27 +607,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       if (filterFinancieraId !== 'ALL' && c.financieraId !== filterFinancieraId) return false;
       
       // 3. Filtro por Semana/Ciclo
-      if (filterWeekId === 'ALL') return true;
-      
-      if (filterWeekId === 'CURRENT') {
+      if (filterWeekId === 'ALL') {
+          // Check activity if needed
+      } else if (filterWeekId === 'CURRENT') {
           const latestActiveWeek = data.weeks
               .filter(w => w.isActive && w.financieraId === c.financieraId)
               .sort((a, b) => b.startDate - a.startDate)[0];
           if (!latestActiveWeek) return false;
           if (c.weekId) {
-              return c.weekId === latestActiveWeek.id;
+              if (c.weekId !== latestActiveWeek.id) return false;
           } else {
               const end = latestActiveWeek.endDate || (latestActiveWeek.startDate + 7 * 24 * 60 * 60 * 1000);
-              return c.registeredAt >= latestActiveWeek.startDate && c.registeredAt <= end;
+              if (c.registeredAt < latestActiveWeek.startDate || c.registeredAt > end) return false;
           }
       } else {
           // Filtro por una semana específica
-          if (c.weekId) return c.weekId === filterWeekId;
-          const targetWeek = data.weeks.find(w => w.id === filterWeekId);
-          if (!targetWeek) return false;
-          const end = targetWeek.endDate || (targetWeek.startDate + 7 * 24 * 60 * 60 * 1000);
-          return c.registeredAt >= targetWeek.startDate && c.registeredAt <= end;
+          if (c.weekId) {
+              if (c.weekId !== filterWeekId) return false;
+          } else {
+              const targetWeek = data.weeks.find(w => w.id === filterWeekId);
+              if (!targetWeek) return false;
+              const end = targetWeek.endDate || (targetWeek.startDate + 7 * 24 * 60 * 60 * 1000);
+              if (c.registeredAt < targetWeek.startDate || c.registeredAt > end) return false;
+          }
       }
+
+      // 4. Filtro por Estado de Crédito (13 semanas)
+      if (filterClientActivity !== 'ALL') {
+          const cycle = getClientLoanCycle(c, data.weeks);
+          if (filterClientActivity === 'ACTIVE' && !cycle.isActive) return false;
+          if (filterClientActivity === 'INACTIVE' && cycle.isActive) return false;
+      }
+
+      return true;
   }).filter(c => {
       if (!clientSearchTerm) return true;
       const search = clientSearchTerm.toLowerCase();
@@ -608,7 +711,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         setAppName(data.settings.appName || 'SUPER VisorApp');
         setLogoUrl(data.settings.logoUrl || '');
         setLogoGifUrl(data.settings.logoGifUrl || '');
-        setVersionName(data.settings.versionName || 'v5.01');
+        setVersionName(`v${VERSION}`);
         setVersionColor(data.settings.versionColor || '#4f46e5');
         setDesignVersion(data.settings.adminDesignVersion || 'v1');
         setFooterLogoUrl(data.settings.footerLogoUrl || '');
@@ -621,7 +724,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   }, [data.settings]);
 
   const handleSaveSettings = () => {
-    onUpdateSettings(prefix, sequence, appName, { requireFacade: reqFacade, requireGuarantee: minGuarantees > 0, minGuarantees }, versionName, versionColor, logoUrl, designVersion, logoGifUrl, footerLogoUrl, footerInfoHtml, birthdayPetUrl, birthdayDurationSeconds);
+    onUpdateSettings(prefix, sequence, appName, { requireFacade: reqFacade, requireGuarantee: minGuarantees > 0, minGuarantees }, `v${VERSION}`, versionColor, logoUrl, designVersion, logoGifUrl, footerLogoUrl, footerInfoHtml, birthdayPetUrl, birthdayDurationSeconds);
     alert("Ajustes globales actualizados. La PWA se actualizará en unos instantes.");
   };
 
@@ -1885,6 +1988,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                         <button onClick={handleExportClientsPDF} className="bg-red-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md hover:bg-red-700 transition-colors flex items-center gap-2">
                             <FileText className="w-4 h-4" /> PDF
                         </button>
+                        {duplicateClientGroups.length > 0 && (
+                            <button 
+                                onClick={() => setShowMergeDuplicatesModal(true)} 
+                                className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-3.5 py-2 rounded-lg text-[10px] font-black uppercase shadow-md hover:from-amber-600 hover:to-orange-600 transition-all flex items-center gap-1.5 animate-pulse"
+                                title="Unificar Clientes Duplicados"
+                            >
+                                <Sparkles className="w-4 h-4" /> Unificar Duplicados ({duplicateClientGroups.length})
+                            </button>
+                        )}
                         <select value={filterFinancieraId} onChange={(e) => setFilterFinancieraId(e.target.value)} className="flex-1 sm:w-40 p-2 border border-slate-200 bg-white text-slate-900 text-[10px] font-black uppercase rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm">
                             <option value="ALL">TODAS LAS FIN.</option>
                             {data.financieras.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
@@ -1903,6 +2015,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 const fin = data.financieras.find(f => f.id === w.financieraId);
                                 return <option key={w.id} value={w.id}>{w.name} ({fin?.name || 'S/F'})</option>;
                             })}
+                        </select>
+                        <select value={filterClientActivity} onChange={(e) => setFilterClientActivity(e.target.value as any)} className="flex-1 sm:w-44 p-2 border border-slate-200 bg-white text-slate-900 text-[10px] font-black uppercase rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm">
+                            <option value="ALL">TODOS (ACTIVOS/INACT)</option>
+                            <option value="ACTIVE">🟢 ACTIVOS (≤ 13 SEM)</option>
+                            <option value="INACTIVE">⚪ INACTIVOS (+13 SEM)</option>
                         </select>
                     </div>
                 </div>
@@ -2208,14 +2325,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                             </div>
                                         </td>
                                         <td className="py-4 px-4 text-center">
-                                            <div className="flex justify-center group relative">
-                                                {completion.isComplete ? (
-                                                    <span className="px-2 py-1 bg-green-100 text-green-700 text-[10px] font-black uppercase rounded-lg border border-green-200 shadow-sm flex items-center gap-1">
-                                                        <CheckCircle className="w-3 h-3" /> COMPLETO
+                                            <div className="flex flex-col items-center gap-1 group relative">
+                                                {(() => {
+                                                    const cycle = getClientLoanCycle(client, data.weeks);
+                                                    return cycle.isActive ? (
+                                                        <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase rounded-lg border border-emerald-200 shadow-xs flex items-center gap-1">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                                            {cycle.cycleLabel}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-[9px] font-black uppercase rounded-lg border border-slate-200 shadow-xs flex items-center gap-1">
+                                                            <Clock className="w-2.5 h-2.5 text-slate-400" />
+                                                            {cycle.cycleLabel}
+                                                        </span>
+                                                    );
+                                                })()}
+                                                {client.isManuallyApproved ? (
+                                                    <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase rounded-lg border border-emerald-200 shadow-xs flex items-center gap-1" title={client.manuallyApprovedBy ? `Autorizado manualmente por ${client.manuallyApprovedBy}` : 'Autorizado manualmente'}>
+                                                        <ShieldCheck className="w-2.5 h-2.5 text-emerald-600" /> AUTORIZADO
+                                                    </span>
+                                                ) : completion.isComplete ? (
+                                                    <span className="px-2 py-0.5 bg-green-100 text-green-700 text-[9px] font-black uppercase rounded-lg border border-green-200 shadow-xs flex items-center gap-1">
+                                                        <CheckCircle className="w-2.5 h-2.5" /> COMPLETO
                                                     </span>
                                                 ) : (
-                                                    <span className="px-2 py-1 bg-rose-100 text-rose-700 text-[10px] font-black uppercase rounded-lg border border-rose-200 shadow-sm flex items-center gap-1 cursor-help">
-                                                        <AlertTriangle className="w-3 h-3" /> INCOMPLETO
+                                                    <span className="px-2 py-0.5 bg-rose-100 text-rose-700 text-[9px] font-black uppercase rounded-lg border border-rose-200 shadow-xs flex items-center gap-1 cursor-help">
+                                                        <AlertTriangle className="w-2.5 h-2.5" /> INCOMPLETO
                                                     </span>
                                                 )}
                                                 {!completion.isComplete && completion.missing.length > 0 && (
@@ -2235,6 +2370,37 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                 <button onClick={() => setSelectedClientForDetails(client)} className="p-2 text-indigo-600 bg-indigo-50 rounded-full hover:bg-indigo-100 transition-colors shadow-sm" title="Ver Detalle"><Eye className="w-4 h-4"/></button>
                                                 {(isSuperAdmin || isViewer) && (
                                                     <button onClick={() => { setSelectedClientForDetails(client); startEditClient(client); }} className="p-2 text-amber-600 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors shadow-sm" title="Editar Cliente"><Pencil className="w-4 h-4"/></button>
+                                                )}
+                                                {(isSuperAdmin || isViewer) && (
+                                                    client.isManuallyApproved ? (
+                                                        <button
+                                                            onClick={() => {
+                                                                if (confirm(`¿Quitar autorización manual a "${client.name}"?\nEl cliente volverá a evaluarse según sus requisitos de completitud.`)) {
+                                                                    onUpdateClient(client.id, { isManuallyApproved: false, manuallyApprovedBy: '', manuallyApprovedAt: 0 });
+                                                                }
+                                                            }}
+                                                            className="p-2 text-emerald-700 bg-emerald-100 hover:bg-emerald-200 rounded-full transition-colors shadow-sm"
+                                                            title="Quitar Autorización Manual"
+                                                        >
+                                                            <ShieldAlert className="w-4 h-4 text-emerald-700" />
+                                                        </button>
+                                                    ) : !completion.isComplete ? (
+                                                        <button
+                                                            onClick={() => {
+                                                                if (confirm(`¿Autorizar a "${client.name}" como COMPLETADO?\n\nRequisitos pendientes:\n- ${completion.missing.join('\n- ')}`)) {
+                                                                    onUpdateClient(client.id, { 
+                                                                        isManuallyApproved: true, 
+                                                                        manuallyApprovedBy: isSuperAdmin ? 'ADMIN' : 'VISOR', 
+                                                                        manuallyApprovedAt: Date.now() 
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="p-2 text-emerald-600 bg-emerald-50 hover:bg-emerald-600 hover:text-white transition-colors shadow-sm"
+                                                            title="Autorizar como Completado"
+                                                        >
+                                                            <ShieldCheck className="w-4 h-4" />
+                                                        </button>
+                                                    ) : null
                                                 )}
                                                 {(isSuperAdmin || isViewer) && client.isArchived && (
                                                     <button 
@@ -2534,18 +2700,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                             const cl = data.clients.find(cli => cli.id === c.id);
                                                             if (cl) setSelectedClientForDetails(cl);
                                                         }}
-                                                        className="flex-1 flex items-center gap-2.5 group/cli hover:bg-slate-100 p-1.5 px-3 rounded-xl transition-all text-left border border-transparent hover:border-slate-200 shadow-sm hover:shadow-md bg-white/50 overflow-hidden"
+                                                        className={`flex-1 flex items-center gap-2.5 group/cli hover:bg-slate-100 p-1.5 px-3 rounded-xl transition-all text-left border shadow-xs hover:shadow-md overflow-hidden ${c.isActiveLoan ? 'bg-white/90 border-slate-200' : 'bg-slate-50/70 border-slate-100 opacity-75'}`}
                                                     >
-                                                        <div className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center text-[9px] font-black group-hover/cli:bg-indigo-600 group-hover/cli:text-white transition-colors border border-indigo-100 flex-shrink-0">
+                                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-black transition-colors border flex-shrink-0 ${c.isActiveLoan ? 'bg-emerald-50 text-emerald-700 border-emerald-200 group-hover/cli:bg-emerald-600 group-hover/cli:text-white' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
                                                             {c.name.charAt(0)}
                                                         </div>
                                                         <div className="flex flex-col overflow-hidden">
                                                             <span className="text-[10px] font-black text-slate-700 uppercase group-hover/cli:text-indigo-600 truncate">
                                                                 {c.name}
                                                             </span>
-                                                            <span className="text-[8px] text-slate-400 font-bold flex items-center gap-1">
-                                                                <Hash className="w-2.5 h-2.5"/> {c.id}
-                                                            </span>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-[8px] text-slate-400 font-bold flex items-center gap-0.5">
+                                                                    <Hash className="w-2.5 h-2.5"/> {c.id}
+                                                                </span>
+                                                                {c.isActiveLoan ? (
+                                                                    <span className="text-[7.5px] bg-emerald-100 text-emerald-700 px-1 py-0.2 rounded font-black uppercase">
+                                                                        Activo ({c.cycleLabel})
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="text-[7.5px] bg-slate-200/80 text-slate-500 px-1 py-0.2 rounded font-black uppercase">
+                                                                        Inactivo (Liberado)
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </div>
                                                         <ArrowRight className="w-3 h-3 text-slate-300 ml-auto group-hover/cli:text-indigo-600 group-hover/cli:translate-x-1 transition-all flex-shrink-0" />
                                                     </button>
@@ -2567,15 +2744,32 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                         </div>
                                     </td>
                                     <td className="py-4 px-6 text-center">
-                                        {guarantor.clients.length >= 2 ? (
-                                            <span className="px-2.5 py-1 bg-rose-50 text-rose-600 rounded-lg text-[10px] font-black uppercase border border-rose-100 flex items-center gap-1.5 justify-center">
-                                                <AlertTriangle className="w-3 h-3"/> LÍMITE ALCANZADO
-                                            </span>
-                                        ) : (
-                                            <span className="px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase border border-blue-100 flex items-center gap-1.5 justify-center">
-                                                <CheckCircle className="w-3 h-3"/> DISPONIBLE
-                                            </span>
-                                        )}
+                                        {(() => {
+                                            const activeCount = guarantor.activeClientsCount;
+                                            const isOwnCredit = !!guarantor.linkedClientId;
+                                            const limit = isOwnCredit ? 1 : 2;
+                                            const hasReachedLimit = activeCount >= limit;
+                                            const inactiveFreedCount = guarantor.clients.length - activeCount;
+
+                                            return (
+                                                <div className="flex flex-col items-center gap-0.5">
+                                                    {hasReachedLimit ? (
+                                                        <span className="px-2.5 py-1 bg-rose-50 text-rose-600 rounded-lg text-[9px] font-black uppercase border border-rose-100 flex items-center gap-1.5 justify-center">
+                                                            <AlertTriangle className="w-3 h-3"/> LÍMITE ({activeCount}/{limit} ACTIVOS)
+                                                        </span>
+                                                    ) : (
+                                                        <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-[9px] font-black uppercase border border-emerald-100 flex items-center gap-1.5 justify-center">
+                                                            <CheckCircle className="w-3 h-3"/> DISPONIBLE ({activeCount}/{limit} ACTIVOS)
+                                                        </span>
+                                                    )}
+                                                    {inactiveFreedCount > 0 && (
+                                                        <span className="text-[8px] font-bold text-slate-400 uppercase">
+                                                            {inactiveFreedCount} inactivo{inactiveFreedCount > 1 ? 's' : ''} liberado{inactiveFreedCount > 1 ? 's' : ''}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
                                     </td>
                                     <td className="py-4 px-6 text-center">
                                         <div className="flex items-center justify-center gap-2">
@@ -2914,8 +3108,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                             </div>
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div className="space-y-1">
-                                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Versión</label>
-                                                    <input type="text" value={versionName} onChange={e => setVersionName(e.target.value)} className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all uppercase" />
+                                                    <div className="flex items-center justify-between px-1">
+                                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Versión</label>
+                                                        <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md uppercase tracking-wider">Compilación</span>
+                                                    </div>
+                                                    <input type="text" value={`v${VERSION}`} disabled readOnly title="Sincronizado automáticamente con la compilación" className="w-full p-4 bg-slate-100 border border-slate-200 rounded-2xl font-bold text-slate-600 outline-none cursor-not-allowed uppercase select-all shadow-inner" />
                                                 </div>
                                                 <div className="space-y-1">
                                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Prefijo QR Global</label>
@@ -3884,6 +4081,49 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    {/* MÓDULO DE ACTUALIZACIÓN OBLIGATORIA */}
+                                    <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 space-y-6 md:col-span-2">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                            <div className="flex items-center gap-4">
+                                                <div className="w-16 h-16 bg-indigo-600 rounded-3xl flex items-center justify-center text-white shadow-lg shadow-indigo-200 flex-shrink-0">
+                                                    <Sparkles className="w-8 h-8" />
+                                                </div>
+                                                <div>
+                                                    <h4 className="text-lg font-black text-slate-800 uppercase tracking-tight">Módulo de Actualización Obligatoria</h4>
+                                                    <p className="text-xs font-medium text-slate-500">Forzar a todos los usuarios (Admin, Visores y Supervisores) a actualizar la app con la versión más reciente.</p>
+                                                </div>
+                                            </div>
+                                            {data.settings?.forceUpdateTimestamp && (
+                                                <span className="px-3.5 py-1.5 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase rounded-full border border-emerald-200 self-start sm:self-center shadow-xs">
+                                                    Última Activación: {new Date(data.settings.forceUpdateTimestamp).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }).toUpperCase()}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="p-5 bg-white rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 shadow-xs">
+                                            <div className="space-y-1">
+                                                <p className="text-xs font-black text-slate-800 uppercase">¿Cómo funciona esta función?</p>
+                                                <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                                                    Al activar este módulo, a cada usuario le aparecerá un modal obligatorio de <strong>"Actualización Requerida"</strong> con el icono de actualización al centro. Deberán hacer clic obligatoriamente para refrescar su aplicación, limpiar la caché y sincronizarse con la versión más reciente. Solo les aparecerá una única vez hasta que se vuelva a activar aquí.
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={async () => {
+                                                    if (confirm("¿Confirmas activar el aviso de Actualización Requerida para todos los usuarios del sistema?\n\nAl activarlo, a todos los dispositivos (Admin, Visores y Supervisores) les aparecerá el modal interactivo para refrescar la app a la versión más reciente.")) {
+                                                        const vName = `v${VERSION}`;
+                                                        if (props.onTriggerForceUpdate) {
+                                                            await props.onTriggerForceUpdate(vName);
+                                                        }
+                                                        alert("¡Aviso de Actualización Requerida activado exitosamente!");
+                                                    }
+                                                }}
+                                                className="w-full sm:w-auto px-6 py-4 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-indigo-100 flex items-center justify-center gap-2 transition-all cursor-pointer flex-shrink-0"
+                                            >
+                                                <RefreshCw className="w-4 h-4" /> Activar Actualización Requerida
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     <div className="bg-slate-50 p-8 rounded-[2.5rem] border border-slate-100 space-y-6">
                                         <div className="w-16 h-16 bg-white rounded-3xl flex items-center justify-center text-indigo-600 shadow-sm border border-slate-100">
                                             <Download className="w-8 h-8" />
@@ -4159,6 +4399,84 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                      </div>
                  ) : (
                      <>
+                        {/* BANNER DE AUTORIZACIÓN / ESTADO DE COMPLETITUD */}
+                        {(() => {
+                            const fin = data.financieras.find(f => f.id === selectedClientForDetails.financieraId);
+                            const completion = checkClientCompleteness(selectedClientForDetails, fin);
+                            const isApproved = !!selectedClientForDetails.isManuallyApproved;
+
+                            return (
+                                <div className={`p-5 rounded-3xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm transition-all ${isApproved ? 'bg-emerald-50/90 border-emerald-200' : completion.isComplete ? 'bg-green-50/80 border-green-200' : 'bg-amber-50/90 border-amber-200'}`}>
+                                    <div className="flex items-center gap-3.5">
+                                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shadow-xs flex-shrink-0 ${isApproved ? 'bg-emerald-600 text-white' : completion.isComplete ? 'bg-green-600 text-white' : 'bg-amber-500 text-white'}`}>
+                                            {isApproved ? <ShieldCheck className="w-6 h-6" /> : completion.isComplete ? <CheckCircle className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+                                        </div>
+                                        <div className="space-y-0.5">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs font-black uppercase tracking-tight text-slate-900">
+                                                    {isApproved ? 'Expediente Autorizado Manualmente' : completion.isComplete ? 'Expediente Completo' : 'Expediente Incompleto (Pendiente)'}
+                                                </span>
+                                                <span className={`text-[8.5px] font-black uppercase px-2 py-0.5 rounded-full border ${isApproved ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : completion.isComplete ? 'bg-green-100 text-green-800 border-green-200' : 'bg-amber-100 text-amber-800 border-amber-200'}`}>
+                                                    {isApproved ? 'Autorizado' : completion.isComplete ? '100% Completo' : 'Incompleto'}
+                                                </span>
+                                            </div>
+                                            {isApproved ? (
+                                                <p className="text-[11px] text-emerald-700 font-bold">
+                                                    Autorizado por <span className="uppercase">{selectedClientForDetails.manuallyApprovedBy || 'ADMINISTRACIÓN'}</span> {selectedClientForDetails.manuallyApprovedAt ? `el ${new Date(selectedClientForDetails.manuallyApprovedAt).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()}` : ''}
+                                                </p>
+                                            ) : !completion.isComplete ? (
+                                                <p className="text-[11px] text-amber-700 font-bold">
+                                                    Requisitos faltantes: {completion.missing.join(', ')}
+                                                </p>
+                                            ) : (
+                                                <p className="text-[11px] text-green-700 font-bold">
+                                                    Todos los requisitos y fotografías fueron cubiertos exitosamente.
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {(isSuperAdmin || isViewer) && (
+                                        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                                            {isApproved ? (
+                                                <button
+                                                    onClick={async () => {
+                                                        if (confirm(`¿Quitar la autorización manual a ${selectedClientForDetails.name}?\nEl cliente volverá a evaluarse automáticamente con los requisitos de la financiera.`)) {
+                                                            await onUpdateClient(selectedClientForDetails.id, { isManuallyApproved: false, manuallyApprovedBy: '', manuallyApprovedAt: 0 });
+                                                            setSelectedClientForDetails({ ...selectedClientForDetails, isManuallyApproved: false, manuallyApprovedBy: '', manuallyApprovedAt: 0 });
+                                                        }
+                                                    }}
+                                                    className="w-full sm:w-auto px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-2xl text-xs font-black uppercase tracking-wide transition-all shadow-xs flex items-center justify-center gap-1.5 active:scale-95"
+                                                >
+                                                    <ShieldAlert className="w-4 h-4 text-slate-600" />
+                                                    Quitar Autorización
+                                                </button>
+                                            ) : !completion.isComplete ? (
+                                                <button
+                                                    onClick={async () => {
+                                                        if (confirm(`¿Autorizar a "${selectedClientForDetails.name}" como COMPLETADO?\n\nRequisitos pendientes:\n- ${completion.missing.join('\n- ')}\n\nAl autorizarlo, quedará como expediente completado para el supervisor y en reportes.`)) {
+                                                            const by = isSuperAdmin ? 'ADMIN' : 'VISOR';
+                                                            const at = Date.now();
+                                                            await onUpdateClient(selectedClientForDetails.id, { 
+                                                                isManuallyApproved: true, 
+                                                                manuallyApprovedBy: by, 
+                                                                manuallyApprovedAt: at 
+                                                            });
+                                                            setSelectedClientForDetails({ ...selectedClientForDetails, isManuallyApproved: true, manuallyApprovedBy: by, manuallyApprovedAt: at });
+                                                        }
+                                                    }}
+                                                    className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl text-xs font-black uppercase tracking-wide transition-all shadow-md shadow-emerald-200 flex items-center justify-center gap-2 active:scale-95"
+                                                >
+                                                    <ShieldCheck className="w-4 h-4" />
+                                                    Autorizar como Completado
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
                             <div className="space-y-6">
                             <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-indigo-500 pl-3">Expediente del Solicitante</h4>
@@ -4931,6 +5249,129 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                 className="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-200 flex items-center justify-center gap-2"
               >
                 <Save className="w-4 h-4" /> Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {showMergeDuplicatesModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-3xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-100 flex flex-col gap-5">
+            <div className="flex justify-between items-center border-b pb-4">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 rounded-xl bg-amber-100 text-amber-700">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black uppercase text-slate-800 tracking-tight">Detección y Fusión de Duplicados</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase">Grupos con nombres idénticos detectados: {duplicateClientGroups.length}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {duplicateClientGroups.length > 0 && props.onMergeClients && (
+                  <button
+                    disabled={isMergingDuplicates}
+                    onClick={handleMergeAllDuplicates}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-wide transition-all shadow-md shadow-indigo-100 flex items-center gap-1.5 active:scale-95"
+                    title="Unificar todos los duplicados con un solo clic (requiere código de autorización)"
+                  >
+                    {isMergingDuplicates ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Unificar Todos ({duplicateClientGroups.length})
+                  </button>
+                )}
+                <button onClick={() => setShowMergeDuplicatesModal(false)} className="p-2 hover:bg-slate-100 rounded-full text-slate-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {duplicateClientGroups.length === 0 ? (
+                <div className="text-center py-10">
+                  <CheckCircle className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
+                  <p className="text-xs font-black text-slate-700 uppercase">No se detectaron clientes duplicados</p>
+                  <p className="text-[10px] text-slate-400 uppercase">Tu cartera de clientes se encuentra 100% limpia y sin duplicados.</p>
+                </div>
+              ) : (
+                duplicateClientGroups.map(group => {
+                  const newest = group.clients[0];
+                  const olderList = group.clients.slice(1);
+                  return (
+                    <div key={group.key} className="p-4 bg-slate-50 rounded-2xl border border-amber-200/80 flex flex-col gap-3">
+                      <div className="flex justify-between items-start gap-2">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-xs font-black text-slate-900 uppercase tracking-tight">{group.name}</h4>
+                            <span className="text-[9px] bg-indigo-100 text-indigo-800 font-black px-2 py-0.5 rounded-full uppercase">
+                              {group.financieraName}
+                            </span>
+                          </div>
+                          <span className="text-[9px] bg-amber-100 text-amber-800 font-black px-2 py-0.5 rounded-full uppercase inline-block mt-0.5">
+                            {group.clients.length} Registros en esta financiera
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        {/* Newest */}
+                        <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200 flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="text-[8.5px] bg-emerald-600 text-white font-black px-2 py-0.5 rounded-md uppercase">QR Nuevo (Destino)</span>
+                            <span className="font-black text-slate-800 font-mono text-[11px]">{newest.id}</span>
+                            <span className="text-[10px] text-slate-500 uppercase">({new Date(newest.registeredAt || 0).toLocaleDateString('es-MX')})</span>
+                          </div>
+                          <div className="text-[10px] font-bold text-emerald-700">
+                            {data.visits.filter(v => v.clientId === newest.id).length} visitas
+                          </div>
+                        </div>
+
+                        {/* Older */}
+                        {olderList.map(old => (
+                          <div key={old.id} className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[8.5px] bg-slate-200 text-slate-700 font-black px-2 py-0.5 rounded-md uppercase">QR Anterior</span>
+                              <span className="font-black text-slate-800 font-mono text-[11px]">{old.id}</span>
+                              <span className="text-[10px] text-slate-500 uppercase">({new Date(old.registeredAt || 0).toLocaleDateString('es-MX')})</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-[10px] font-bold text-slate-500">
+                                {data.visits.filter(v => v.clientId === old.id).length} visitas previas
+                              </span>
+                              {props.onMergeClients && (
+                                <button
+                                  disabled={isMergingDuplicates}
+                                  onClick={async () => {
+                                    if (confirm(`¿Confirmas fusionar el registro antiguo (${old.id}) en el nuevo (${newest.id})? Se transferirá el historial de visitas y se eliminará el registro duplicado anterior.`)) {
+                                      setIsMergingDuplicates(true);
+                                      try {
+                                        await props.onMergeClients!(old.id, newest.id);
+                                      } finally {
+                                        setIsMergingDuplicates(false);
+                                      }
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[9px] font-black uppercase transition-all shadow-xs flex items-center gap-1"
+                                >
+                                  {isMergingDuplicates ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                                  Unificar a {newest.id}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-2 border-t flex justify-end">
+              <button 
+                onClick={() => setShowMergeDuplicatesModal(false)}
+                className="px-6 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black text-xs uppercase rounded-xl transition-colors"
+              >
+                Cerrar
               </button>
             </div>
           </div>

@@ -40,7 +40,7 @@ const INITIAL_STATE: AppState = {
       nextSequence: '100000', 
       appName: 'SUPER VisorApp', 
       logoUrl: '',
-      versionName: 'v5.01',
+      versionName: `v${VERSION}`,
       versionColor: '#4f46e5',
       registrationRules: { requireFacade: true, requireGuarantee: true },
       footerLogoUrl: '',
@@ -84,6 +84,37 @@ const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>(INITIAL_STATE);
   const [currentUser, setCurrentUser] = useState<CurrentUserContext | null>(null);
   const [showFooterModal, setShowFooterModal] = useState(false);
+  const [isUpdatingApp, setIsUpdatingApp] = useState(false);
+
+  // MÓDULO DE ACTUALIZACIÓN OBLIGATORIA (Mantenimiento)
+  const forceUpdateTimestamp = appState.settings?.forceUpdateTimestamp;
+  const isForceUpdateRequired = React.useMemo(() => {
+    if (!forceUpdateTimestamp) return false;
+    const lastAck = Number(localStorage.getItem('last_force_update_ack') || 0);
+    return lastAck < forceUpdateTimestamp;
+  }, [forceUpdateTimestamp]);
+
+  const handleAcknowledgeForceUpdate = async () => {
+    setIsUpdatingApp(true);
+    if (forceUpdateTimestamp) {
+      localStorage.setItem('last_force_update_ack', String(forceUpdateTimestamp));
+    }
+    try {
+      if ('caches' in window) {
+        const cacheKeys = await caches.keys();
+        await Promise.all(cacheKeys.map(k => caches.delete(k)));
+      }
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const registration of registrations) {
+          await registration.update();
+        }
+      }
+    } catch (err) {
+      console.warn("Cache update issue:", err);
+    }
+    window.location.reload();
+  };
 
   // LOGICA PWA DINAMICA
   useEffect(() => {
@@ -594,22 +625,50 @@ const App: React.FC = () => {
       }
     }
   };
-  const updateSettings = async (prefix: string, seq: string, appName: string, rules: any, vName: string, vColor: string, logoUrl: string, designVersion?: 'v1' | 'v2', logoGifUrl?: string, footerLogoUrl?: string, footerInfoHtml?: string, birthdayPetUrl?: string, birthdayDurationSeconds?: number) => { 
-    await setDoc(doc(db, 'settings', 'global'), { 
-      qrPrefix: prefix, 
+  const updateSettings = async (
+    prefixOrSettings: string | Partial<SystemSettings>, 
+    seq?: string, 
+    appName?: string, 
+    rules?: any, 
+    vName?: string, 
+    vColor?: string, 
+    logoUrl?: string, 
+    designVersion?: 'v1' | 'v2', 
+    logoGifUrl?: string, 
+    footerLogoUrl?: string, 
+    footerInfoHtml?: string, 
+    birthdayPetUrl?: string, 
+    birthdayDurationSeconds?: number
+  ) => { 
+    if (typeof prefixOrSettings === 'object') {
+      await setDoc(doc(db, 'settings', 'global'), prefixOrSettings, { merge: true });
+      return;
+    }
+
+    const payload: Record<string, any> = { 
+      qrPrefix: prefixOrSettings, 
       nextSequence: seq, 
       appName, 
-      logoUrl, 
       registrationRules: rules, 
-      versionName: vName, 
+      versionName: vName || `v${VERSION}`, 
       versionColor: vColor,
-      adminDesignVersion: designVersion || 'v1',
-      logoGifUrl: logoGifUrl || '',
-      footerLogoUrl: footerLogoUrl || '',
-      footerInfoHtml: footerInfoHtml || '',
-      birthdayPetUrl: birthdayPetUrl || '',
-      birthdayDurationSeconds: birthdayDurationSeconds ?? 5
-    }); 
+      adminDesignVersion: designVersion || 'v1'
+    };
+    if (logoUrl !== undefined) payload.logoUrl = logoUrl;
+    if (logoGifUrl !== undefined) payload.logoGifUrl = logoGifUrl;
+    if (footerLogoUrl !== undefined) payload.footerLogoUrl = footerLogoUrl;
+    if (footerInfoHtml !== undefined) payload.footerInfoHtml = footerInfoHtml;
+    if (birthdayPetUrl !== undefined) payload.birthdayPetUrl = birthdayPetUrl;
+    if (birthdayDurationSeconds !== undefined) payload.birthdayDurationSeconds = birthdayDurationSeconds;
+
+    await setDoc(doc(db, 'settings', 'global'), payload, { merge: true }); 
+  };
+
+  const triggerForceUpdate = async (versionName?: string) => {
+    await setDoc(doc(db, 'settings', 'global'), {
+      forceUpdateTimestamp: Date.now(),
+      forceUpdateVersionName: versionName || appState.settings?.versionName || `v${VERSION}`
+    }, { merge: true });
   };
   const generateQRCodes = async (count: number, prefix: string, financieraId: string) => {
     const codes = []; 
@@ -660,6 +719,71 @@ const App: React.FC = () => {
       await deleteDoc(doc(db, 'clients', clientId));
       const visitsSnap = await getDocs(query(collection(db, 'visits'), where('clientId', '==', clientId)));
       for (const d of visitsSnap.docs) await deleteDoc(d.ref);
+    }
+  };
+
+  const mergeClients = async (sourceOldClientId: string, targetNewClientId: string, suppressAlert = false) => {
+    try {
+      // 1. Re-link visits from old client to new client
+      const visitsQuery = query(collection(db, 'visits'), where('clientId', '==', sourceOldClientId));
+      const visitsSnap = await getDocs(visitsQuery);
+      if (!visitsSnap.empty) {
+        const batch = writeBatch(db);
+        visitsSnap.forEach((visitDoc) => {
+          batch.update(visitDoc.ref, { clientId: targetNewClientId });
+        });
+        await batch.commit();
+      }
+
+      // 2. Inherit photos, avales, or comments if missing in the new record
+      const oldDocRef = doc(db, 'clients', sourceOldClientId);
+      const newDocRef = doc(db, 'clients', targetNewClientId);
+      const oldSnap = await getDoc(oldDocRef);
+      const newSnap = await getDoc(newDocRef);
+
+      if (oldSnap.exists() && newSnap.exists()) {
+        const oldData = oldSnap.data() as Client;
+        const newData = newSnap.data() as Client;
+
+        const updates: Partial<Client> = {
+          isRenewal: true
+        };
+        if (!newData.clientPhotoUrl && oldData.clientPhotoUrl) updates.clientPhotoUrl = oldData.clientPhotoUrl;
+        if (!newData.facadeUrl && oldData.facadeUrl) updates.facadeUrl = oldData.facadeUrl;
+        if (!newData.avalPhotoUrl && oldData.avalPhotoUrl) updates.avalPhotoUrl = oldData.avalPhotoUrl;
+        if (!newData.avalFacadeUrl && oldData.avalFacadeUrl) updates.avalFacadeUrl = oldData.avalFacadeUrl;
+        if ((!newData.avales || newData.avales.length === 0) && oldData.avales && oldData.avales.length > 0) {
+          updates.avales = oldData.avales;
+        }
+        if (!newData.comments && oldData.comments) updates.comments = oldData.comments;
+
+        await updateDoc(newDocRef, updates);
+      }
+
+      // 3. Delete old client record
+      await deleteDoc(oldDocRef);
+
+      // 4. Update local state
+      setAppState(prev => ({
+        ...prev,
+        clients: prev.clients.filter(c => c.id !== sourceOldClientId).map(c => {
+          if (c.id === targetNewClientId) {
+            return { ...c, isRenewal: true };
+          }
+          return c;
+        }),
+        visits: prev.visits.map(v => v.clientId === sourceOldClientId ? { ...v, clientId: targetNewClientId } : v)
+      }));
+
+      if (!suppressAlert) {
+        alert("¡Clientes unificados exitosamente! Se transfirió todo el historial de visitas al nuevo QR.");
+      }
+    } catch (e: any) {
+      console.error("Error merging clients:", e);
+      if (!suppressAlert) {
+        alert("Error al unificar clientes: " + (e?.message || e));
+      }
+      throw e;
     }
   };
   
@@ -1045,6 +1169,8 @@ const App: React.FC = () => {
                 onAddApiKey={addApiKey}
                 onUpdateApiKey={updateApiKey}
                 onDeleteApiKey={deleteApiKey}
+                onMergeClients={mergeClients}
+                onTriggerForceUpdate={triggerForceUpdate}
               />
             ) : <SupervisorPanel 
                   supervisor={currentUser.data as Supervisor} 
@@ -1065,6 +1191,49 @@ const App: React.FC = () => {
                   onUpdateSupervisorSelf={updateSupervisorSelf}
                 />}
           </Layout>
+        )}
+
+        {/* MODAL GLOBAL DE ACTUALIZACIÓN REQUERIDA (OBLIGATORIA) */}
+        {isForceUpdateRequired && (
+          <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4 animate-in fade-in duration-300">
+            <div className="bg-white rounded-[2.5rem] p-8 max-w-md w-full shadow-2xl border border-slate-100 flex flex-col items-center text-center gap-6 animate-in zoom-in-95 duration-300">
+              
+              {/* Icono de actualización de buen tamaño y animado al centro */}
+              <div className="relative my-2">
+                <div className="w-28 h-28 rounded-full bg-indigo-50 border-4 border-indigo-100 flex items-center justify-center shadow-inner relative">
+                  <div className="absolute inset-0 rounded-full bg-indigo-500/10 animate-ping" />
+                  <RefreshCw className="w-14 h-14 text-indigo-600 animate-spin [animation-duration:8s]" />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase rounded-full tracking-wider border border-indigo-200">
+                  Nueva Versión {appState.settings?.versionName || ''}
+                </span>
+                <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">
+                  Actualización Requerida
+                </h2>
+              </div>
+
+              <button
+                disabled={isUpdatingApp}
+                onClick={handleAcknowledgeForceUpdate}
+                className="w-full py-5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-indigo-200 flex items-center justify-center gap-3 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isUpdatingApp ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Actualizando...
+                  </>
+                ) : (
+                  <>
+                    <RefreshCw className="w-5 h-5" />
+                    Actualizar la Aplicación
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </>

@@ -48,6 +48,7 @@ interface AdminPanelV2Props {
   onAddApiKey: (name: string, permissions: ApiPermission[], assignedFinancieraIds: string[]) => void;
   onUpdateApiKey: (id: string, active: boolean, permissions: ApiPermission[], assignedFinancieraIds: string[]) => void;
   onDeleteApiKey: (id: string) => void;
+  onMergeClients?: (sourceOldClientId: string, targetNewClientId: string) => Promise<void>;
 }
 
 export const AdminPanelV2: React.FC<AdminPanelV2Props> = (props) => {

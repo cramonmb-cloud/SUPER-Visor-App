@@ -125,6 +125,9 @@ export interface Client {
   weekId?: string; // NEW: Links client to the week they were registered in
   registeredBySupervisorId?: string; // NEW: Track who originally registered the client
   isRenewal?: boolean; // NEW: Mark if client registration was a renewal
+  isManuallyApproved?: boolean; // NEW: Manually authorized as complete by Admin or Viewer
+  manuallyApprovedBy?: string; // NEW: Who authorized the client
+  manuallyApprovedAt?: number; // NEW: Timestamp when authorization happened
 }
 
 export interface WorkWeek {
@@ -176,6 +179,9 @@ export interface SystemSettings {
   footerInfoHtml?: string; // NEW
   birthdayPetUrl?: string; // NEW: Image URL for birthday mascot / congratulation banner
   birthdayDurationSeconds?: number; // NEW: Duration in seconds to display birthday modal before auto-dismissing
+  forceUpdateTimestamp?: number; // NEW: Timestamp when forced update was broadcast
+  forceUpdateVersionName?: string; // NEW: Target version name for the update
+  forceUpdateMessage?: string; // NEW: Custom update message
 }
 
 export enum ApiPermission {

@@ -7,7 +7,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { query, collection, where, getDocs, limit } from 'firebase/firestore';
 import { CachedImage } from './CachedImage';
 import { checkClientCompleteness } from './AdminPanel';
-import { removeAccents } from '../constants';
+import { removeAccents, getClientLoanCycle, ClientLoanCycle } from '../constants';
 import jsQR from 'jsqr';
 
 
@@ -98,6 +98,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const [aval2Search, setAval2Search] = useState('');
     const [aval1SelectedClient, setAval1SelectedClient] = useState<Client | null>(null);
     const [aval2SelectedClient, setAval2SelectedClient] = useState<Client | null>(null);
+    const [confirmedHomonymName, setConfirmedHomonymName] = useState<string | null>(null);
+    const [clientActivityFilter, setClientActivityFilter] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
 
     // Forms state
     const [clientName, setClientName] = useState('');
@@ -114,13 +116,13 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const [avalCellphone, setAvalCellphone] = useState('');
 
     const clientSuggestions = useMemo(() => {
-        const norm = removeAccents(clientName.trim().toUpperCase());
+        const norm = removeAccents(clientName.trim().replace(/\s+/g, ' ').toUpperCase());
         if (!norm || norm.length < 2 || isRenewalMode) return [];
 
         return clients
             .filter(c => {
                 if (c.isArchived) return false;
-                const normName = removeAccents(c.name.trim().toUpperCase());
+                const normName = removeAccents((c.name || '').trim().replace(/\s+/g, ' ').toUpperCase());
                 return normName.includes(norm);
             })
             .slice(0, 30)
@@ -253,6 +255,17 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const [avalFacadePreview, setAvalFacadePreview] = useState<string | null>(null);
     const [avalPhotoFile, setAvalPhotoFile] = useState<File | null>(null);
     const [avalPhotoPreview, setAvalPhotoPreview] = useState<string | null>(null);
+
+    const [aval2FacadeFile, setAval2FacadeFile] = useState<File | null>(null);
+    const [aval2FacadePreview, setAval2FacadePreview] = useState<string | null>(null);
+    const [aval2PhotoFile, setAval2PhotoFile] = useState<File | null>(null);
+    const [aval2PhotoPreview, setAval2PhotoPreview] = useState<string | null>(null);
+
+    const [aval3FacadeFile, setAval3FacadeFile] = useState<File | null>(null);
+    const [aval3FacadePreview, setAval3FacadePreview] = useState<string | null>(null);
+    const [aval3PhotoFile, setAval3PhotoFile] = useState<File | null>(null);
+    const [aval3PhotoPreview, setAval3PhotoPreview] = useState<string | null>(null);
+
     const [selectedAvalIndex, setSelectedAvalIndex] = useState<number>(0);
     const [guarantees, setGuarantees] = useState<string[]>([]);
     const [newGuarantee, setNewGuarantee] = useState('');
@@ -318,23 +331,18 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const getAvalFormProgress = () => {
         let total = 0;
         let filled = 0;
+        const minGAval = supervisorFinanciera?.minGuaranteesForAval ?? 0;
 
         // Aval 1
         total += 4;
         if (avalName.trim()) filled++;
         if (avalAddress.trim()) filled++;
         if (avalCellphone.trim().length >= 10) filled++;
-        const minGAval = supervisorFinanciera?.minGuaranteesForAval ?? 0;
         if (aval1Guarantees.length >= minGAval) filled++;
 
-        // Photos
         if (requireGuarantorFacade) {
             total++;
-            if (avalFacadeFile || avalFacadePreview) filled++;
-        }
-        if (requireGuarantorPhoto) {
-            total++;
-            if (avalPhotoFile || avalPhotoPreview) filled++;
+            if (avalFacadeFile || avalFacadePreview || (aval1IsClient && aval1SelectedClient?.facadeUrl)) filled++;
         }
 
         // Aval 2
@@ -344,6 +352,11 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             if (aval2Address.trim()) filled++;
             if (aval2Cellphone.trim().length >= 10) filled++;
             if (aval2Guarantees.length >= minGAval) filled++;
+
+            if (requireGuarantorFacade) {
+                total++;
+                if (aval2FacadeFile || aval2FacadePreview || (aval2IsClient && aval2SelectedClient?.facadeUrl)) filled++;
+            }
         }
 
         // Aval 3
@@ -353,9 +366,14 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             if (aval3Address.trim()) filled++;
             if (aval3Cellphone.trim().length >= 10) filled++;
             if (aval3Guarantees.length >= minGAval) filled++;
+
+            if (requireGuarantorFacade) {
+                total++;
+                if (aval3FacadeFile || aval3FacadePreview) filled++;
+            }
         }
 
-        return Math.round((filled / total) * 100);
+        return total > 0 ? Math.round((filled / total) * 100) : 0;
     };
 
     const getClientDetailProgress = (client: any) => {
@@ -419,21 +437,17 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             if (av.cellphone?.trim().length >= 10) filled++;
             if ((av.guarantees?.length || 0) >= minGAval) filled++;
 
-            if (idx === 0) {
-                if (requireGuarantorFacade) {
-                    total++;
-                    if (av.facadeUrl || client.avalFacadeUrl) filled++;
-                }
-                if (requireGuarantorPhoto) {
-                    total++;
-                    if (av.photoUrl || client.avalPhotoUrl) filled++;
-                }
+            // Fachada requerida para CADA aval
+            if (requireGuarantorFacade) {
+                total++;
+                const facade = idx === 0 ? (av.facadeUrl || client.avalFacadeUrl) : av.facadeUrl;
+                if (facade) filled++;
             }
         });
 
         // If list length is less than required, add the missing ones to the total
         if (list.length < reqAvals) {
-            total += (reqAvals - list.length) * 4;
+            total += (reqAvals - list.length) * (4 + (requireGuarantorFacade ? 1 : 0));
         }
 
         return total > 0 ? Math.round((filled / total) * 100) : 0;
@@ -468,6 +482,10 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const clientPhotoInputRef = useRef<HTMLInputElement>(null);
     const guarantorPhotoInputRef = useRef<HTMLInputElement>(null);
     const guarantorFacadeInputRef = useRef<HTMLInputElement>(null);
+    const guarantor2PhotoInputRef = useRef<HTMLInputElement>(null);
+    const guarantor2FacadeInputRef = useRef<HTMLInputElement>(null);
+    const guarantor3PhotoInputRef = useRef<HTMLInputElement>(null);
+    const guarantor3FacadeInputRef = useRef<HTMLInputElement>(null);
 
     // Grouping logic for clients
     const supervisorClients = clients.filter(c => c.supervisorId === supervisor.id && !c.isArchived);
@@ -527,7 +545,20 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         return list;
     }, [financieraClients]);
 
-    const currentWeekClients = supervisorClients.filter(c => {
+    const filteredSupervisorClients = useMemo(() => {
+        return supervisorClients.filter(c => {
+            if (clientActivityFilter === 'ALL') return true;
+            const cycle = getClientLoanCycle(c, allWeeks);
+            if (clientActivityFilter === 'ACTIVE') return cycle.isActive;
+            if (clientActivityFilter === 'INACTIVE') return !cycle.isActive;
+            return true;
+        });
+    }, [supervisorClients, clientActivityFilter, allWeeks]);
+
+    const activeSupervisorClientsCount = useMemo(() => supervisorClients.filter(c => getClientLoanCycle(c, allWeeks).isActive).length, [supervisorClients, allWeeks]);
+    const inactiveSupervisorClientsCount = useMemo(() => supervisorClients.filter(c => !getClientLoanCycle(c, allWeeks).isActive).length, [supervisorClients, allWeeks]);
+
+    const currentWeekClients = filteredSupervisorClients.filter(c => {
         if (!currentWeek) return false;
         // Prioritize explicit weekId if present
         if (c.weekId) return c.weekId === currentWeek.id;
@@ -540,7 +571,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         .filter(w => w.id !== currentWeek?.id)
         .map(week => {
             const end = week.endDate || (week.startDate + 7 * 24 * 60 * 60 * 1000);
-            const matched = supervisorClients.filter(c => {
+            const matched = filteredSupervisorClients.filter(c => {
                 if (c.weekId) return c.weekId === week.id;
                 return c.registeredAt >= week.startDate && c.registeredAt <= end;
             });
@@ -549,7 +580,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         .filter(g => g.clients.length > 0)
         .sort((a, b) => b.week.startDate - a.week.startDate);
 
-    const otherClients = supervisorClients.filter(c => {
+    const otherClients = filteredSupervisorClients.filter(c => {
         // Is not in current week
         const inCurrent = currentWeek && c.registeredAt >= currentWeek.startDate && c.registeredAt <= (currentWeek.endDate || (currentWeek.startDate + 7 * 24 * 60 * 60 * 1000));
         if (inCurrent) return false;
@@ -730,12 +761,21 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             const norm = removeAccents(name.trim().toUpperCase());
             const normTargetClient = targetClientName ? removeAccents(targetClientName.trim().toUpperCase()) : '';
 
-            const isAlreadyClient = clients.some(cl => !cl.isArchived && removeAccents((cl.name || '').trim().toUpperCase()) === norm);
+            // Check if this person is currently an ACTIVE client
+            const isAlreadyClient = clients.some(cl => 
+                !cl.isArchived && 
+                removeAccents((cl.name || '').trim().toUpperCase()) === norm &&
+                getClientLoanCycle(cl, allWeeks).isActive
+            );
             const limit = isAlreadyClient ? maxClientAsAval : maxAvalRegistrations;
 
             let count = 0;
             clients.forEach(cl => {
                 if (cl.isArchived) return;
+
+                // 13-week rule: Inactive clients (+13 weeks) do NOT occupy their aval's slot!
+                const cycle = getClientLoanCycle(cl, allWeeks);
+                if (!cycle.isActive) return;
 
                 // RENEWAL / RE-ASSIGNMENT LOGIC:
                 // Skip counting if this client record belongs to the target client being registered/renewed
@@ -751,22 +791,51 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             return { ok: count < limit, limit, count };
         };
 
+        const normalizedClientTyped = removeAccents((clientName || '').trim().replace(/\s+/g, ' ').toUpperCase());
+
+        // Strict anti-duplicate check: If client exists and user didn't choose Renewal
+        if (!isRenewalMode && normalizedClientTyped) {
+            const existingClientMatch = clients.find(cl => 
+                !cl.isArchived && 
+                cl.id !== scannedCode && 
+                removeAccents((cl.name || '').trim().replace(/\s+/g, ' ').toUpperCase()) === normalizedClientTyped
+            );
+
+            if (existingClientMatch && confirmedHomonymName !== normalizedClientTyped) {
+                setCoincidenceClient(existingClientMatch);
+                return;
+            }
+        }
+
         const checkClientLimit = (name: string) => {
             if (!name) return true;
-            const norm = removeAccents(name.trim().toUpperCase());
+            const norm = removeAccents(name.trim().replace(/\s+/g, ' ').toUpperCase());
             if (isRenewalMode) return true;
 
             let clientOccurrenceCount = 0;
             clients.forEach(cl => {
                 if (cl.isArchived) return;
-                if (removeAccents((cl.name || '').trim().toUpperCase()) === norm) {
+                // Only count ACTIVE loans (within 13 weeks)
+                const cycle = getClientLoanCycle(cl, allWeeks);
+                if (!cycle.isActive) return;
+
+                if (removeAccents((cl.name || '').trim().replace(/\s+/g, ' ').toUpperCase()) === norm) {
                     clientOccurrenceCount++;
                 }
             });
             return clientOccurrenceCount < maxClientActiveLoans;
         };
 
-        if (!checkClientLimit(clientName)) {
+        if (!checkClientLimit(clientName) && confirmedHomonymName !== normalizedClientTyped) {
+            const existingClientMatch = clients.find(cl => 
+                !cl.isArchived && 
+                cl.id !== scannedCode && 
+                removeAccents((cl.name || '').trim().replace(/\s+/g, ' ').toUpperCase()) === normalizedClientTyped
+            );
+            if (existingClientMatch) {
+                setCoincidenceClient(existingClientMatch);
+                return;
+            }
             setRegistrationError({
                 title: "Límite de Clientes",
                 message: `El cliente ${clientName} ya cuenta con un registro activo. Por reglamento, una persona solo puede estar como CLIENTE ${maxClientActiveLoans} vez/veces.`
@@ -825,7 +894,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 clientPhotoUrl = await getDownloadURL(clientSnapshot.ref);
             }
 
-            // Upload Aval Facade if provided
+            // Upload Aval 1 Facade if provided
             let avalFacadeUrl = isRenewalMode && avalFacadePreview && !avalFacadeFile ? avalFacadePreview : '';
             if (avalFacadeFile) {
                 const compressed = await compressImage(avalFacadeFile);
@@ -834,7 +903,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 avalFacadeUrl = await getDownloadURL(avalFacadeSnapshot.ref);
             }
 
-            // Upload Aval Photo if provided
+            // Upload Aval 1 Photo if provided
             let avalPhotoUrl = isRenewalMode && avalPhotoPreview && !avalPhotoFile ? avalPhotoPreview : '';
             if (avalPhotoFile) {
                 const compressed = await compressImage(avalPhotoFile);
@@ -845,6 +914,42 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
             const finalAval1FacadeUrl = avalFacadeUrl || (aval1IsClient ? (aval1SelectedClient?.facadeUrl || '') : '');
             const finalAval1PhotoUrl = avalPhotoUrl || (aval1IsClient ? (aval1SelectedClient?.clientPhotoUrl || '') : '');
+
+            // Upload Aval 2 Photos if provided
+            let aval2FacadeUrl = isRenewalMode && aval2FacadePreview && !aval2FacadeFile ? aval2FacadePreview : '';
+            if (aval2FacadeFile) {
+                const compressed = await compressImage(aval2FacadeFile);
+                const aval2FacadeRef = ref(storage, `aval_facades/${scannedCode}_aval2_${Date.now()}.jpg`);
+                const snapshot = await uploadBytes(aval2FacadeRef, compressed);
+                aval2FacadeUrl = await getDownloadURL(snapshot.ref);
+            }
+            let aval2PhotoUrl = isRenewalMode && aval2PhotoPreview && !aval2PhotoFile ? aval2PhotoPreview : '';
+            if (aval2PhotoFile) {
+                const compressed = await compressImage(aval2PhotoFile);
+                const aval2PhotoRef = ref(storage, `aval_photos/${scannedCode}_aval2_${Date.now()}.jpg`);
+                const snapshot = await uploadBytes(aval2PhotoRef, compressed);
+                aval2PhotoUrl = await getDownloadURL(snapshot.ref);
+            }
+            const finalAval2FacadeUrl = aval2FacadeUrl || (aval2IsClient ? (aval2SelectedClient?.facadeUrl || '') : '');
+            const finalAval2PhotoUrl = aval2PhotoUrl || (aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : '');
+
+            // Upload Aval 3 Photos if provided
+            let aval3FacadeUrl = isRenewalMode && aval3FacadePreview && !aval3FacadeFile ? aval3FacadePreview : '';
+            if (aval3FacadeFile) {
+                const compressed = await compressImage(aval3FacadeFile);
+                const aval3FacadeRef = ref(storage, `aval_facades/${scannedCode}_aval3_${Date.now()}.jpg`);
+                const snapshot = await uploadBytes(aval3FacadeRef, compressed);
+                aval3FacadeUrl = await getDownloadURL(snapshot.ref);
+            }
+            let aval3PhotoUrl = isRenewalMode && aval3PhotoPreview && !aval3PhotoFile ? aval3PhotoPreview : '';
+            if (aval3PhotoFile) {
+                const compressed = await compressImage(aval3PhotoFile);
+                const aval3PhotoRef = ref(storage, `aval_photos/${scannedCode}_aval3_${Date.now()}.jpg`);
+                const snapshot = await uploadBytes(aval3PhotoRef, compressed);
+                aval3PhotoUrl = await getDownloadURL(snapshot.ref);
+            }
+            const finalAval3FacadeUrl = aval3FacadeUrl || (isRenewalMode && aval3FacadePreview ? aval3FacadePreview : '');
+            const finalAval3PhotoUrl = aval3PhotoUrl || (isRenewalMode && aval3PhotoPreview ? aval3PhotoPreview : '');
 
             const currentAvales: Guarantor[] = [
                 {
@@ -861,8 +966,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     name: aval2Name.toUpperCase(),
                     address: aval2Address.toUpperCase(),
                     cellphone: aval2Cellphone,
-                    facadeUrl: aval2IsClient ? (aval2SelectedClient?.facadeUrl || '') : '',
-                    photoUrl: aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : '',
+                    facadeUrl: finalAval2FacadeUrl,
+                    photoUrl: finalAval2PhotoUrl,
                     guarantees: aval2Guarantees.map(g => ({ description: g.toUpperCase() }))
                 });
             }
@@ -871,6 +976,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     name: aval3Name.toUpperCase(),
                     address: aval3Address.toUpperCase(),
                     cellphone: aval3Cellphone,
+                    facadeUrl: finalAval3FacadeUrl,
+                    photoUrl: finalAval3PhotoUrl,
                     guarantees: aval3Guarantees.map(g => ({ description: g.toUpperCase() }))
                 });
             }
@@ -956,8 +1063,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             }
 
             const isAvalComplete =
-                (!requireGuarantorFacade || !!facadeUrl || !!targetAvalClient.avales?.[selectedAvalIndex]?.facadeUrl) &&
-                (!fin?.requireGuarantorPhoto || !!guarantorPhotoUrl || !!targetAvalClient.avales?.[selectedAvalIndex]?.photoUrl);
+                (!requireGuarantorFacade || !!facadeUrl || !!targetAvalClient.avales?.[selectedAvalIndex]?.facadeUrl || !!targetAvalClient.avalFacadeUrl);
 
             await onUpdateAvalVisit(targetAvalClient.id, facadeUrl, loc.lat, loc.lng, selectedAvalIndex, avalGuarantees, guarantorPhotoUrl, isAvalComplete);
 
@@ -983,6 +1089,10 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             let clientPhotoUrl = editingClient.clientPhotoUrl || '';
             let avalFacadeUrl = editingClient.avalFacadeUrl || (editingClient.avales?.[0]?.facadeUrl || '');
             let avalPhotoUrl = editingClient.avalPhotoUrl || (editingClient.avales?.[0]?.photoUrl || '');
+            let aval2FacadeUrl = editingClient.avales?.[1]?.facadeUrl || '';
+            let aval2PhotoUrl = editingClient.avales?.[1]?.photoUrl || '';
+            let aval3FacadeUrl = editingClient.avales?.[2]?.facadeUrl || '';
+            let aval3PhotoUrl = editingClient.avales?.[2]?.photoUrl || '';
 
             if (supervisor.canEditPhotos) {
                 if (facadeFile) {
@@ -1009,6 +1119,30 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     const snap = await uploadBytes(ref_, compressed);
                     avalPhotoUrl = await getDownloadURL(snap.ref);
                 }
+                if (aval2FacadeFile) {
+                    const compressed = await compressImage(aval2FacadeFile);
+                    const ref_ = ref(storage, `aval_facades/${editingClient.id}_aval2_${Date.now()}.jpg`);
+                    const snap = await uploadBytes(ref_, compressed);
+                    aval2FacadeUrl = await getDownloadURL(snap.ref);
+                }
+                if (aval2PhotoFile) {
+                    const compressed = await compressImage(aval2PhotoFile);
+                    const ref_ = ref(storage, `aval_photos/${editingClient.id}_aval2_${Date.now()}.jpg`);
+                    const snap = await uploadBytes(ref_, compressed);
+                    aval2PhotoUrl = await getDownloadURL(snap.ref);
+                }
+                if (aval3FacadeFile) {
+                    const compressed = await compressImage(aval3FacadeFile);
+                    const ref_ = ref(storage, `aval_facades/${editingClient.id}_aval3_${Date.now()}.jpg`);
+                    const snap = await uploadBytes(ref_, compressed);
+                    aval3FacadeUrl = await getDownloadURL(snap.ref);
+                }
+                if (aval3PhotoFile) {
+                    const compressed = await compressImage(aval3PhotoFile);
+                    const ref_ = ref(storage, `aval_photos/${editingClient.id}_aval3_${Date.now()}.jpg`);
+                    const snap = await uploadBytes(ref_, compressed);
+                    aval3PhotoUrl = await getDownloadURL(snap.ref);
+                }
             }
 
             const currentAvales: Guarantor[] = [
@@ -1026,8 +1160,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     name: aval2Name.toUpperCase(),
                     address: aval2Address.toUpperCase(),
                     cellphone: aval2Cellphone,
-                    facadeUrl: aval2IsClient ? (aval2SelectedClient?.facadeUrl || '') : (editingClient.avales?.[1]?.facadeUrl || ''),
-                    photoUrl: aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : (editingClient.avales?.[1]?.photoUrl || ''),
+                    facadeUrl: aval2IsClient ? (aval2SelectedClient?.facadeUrl || '') : aval2FacadeUrl,
+                    photoUrl: aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : aval2PhotoUrl,
                     guarantees: aval2Guarantees.map(g => ({ description: g.toUpperCase() }))
                 });
             }
@@ -1036,6 +1170,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     name: aval3Name.toUpperCase(),
                     address: aval3Address.toUpperCase(),
                     cellphone: aval3Cellphone,
+                    facadeUrl: aval3FacadeUrl,
+                    photoUrl: aval3PhotoUrl,
                     guarantees: aval3Guarantees.map(g => ({ description: g.toUpperCase() }))
                 });
             }
@@ -1117,12 +1253,17 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         setClientPhotoPreview(client.clientPhotoUrl || null);
         setAvalFacadePreview(client.avalFacadeUrl || (client.avales?.[0]?.facadeUrl || null));
         setAvalPhotoPreview(client.avalPhotoUrl || (client.avales?.[0]?.photoUrl || null));
+        setAval2FacadePreview(client.avales?.[1]?.facadeUrl || null);
+        setAval2PhotoPreview(client.avales?.[1]?.photoUrl || null);
+        setAval3FacadePreview(client.avales?.[2]?.facadeUrl || null);
+        setAval3PhotoPreview(client.avales?.[2]?.photoUrl || null);
     };
 
     const resetForm = () => {
         setClientName(''); setClientAddress(''); setCreditAmount(''); setCellphone('');
         setClientComments(''); // NEW: Reset comments
         setIsRenewalMode(false); setRenewalSourceClientId(null); setClientSearchQuery(''); // NEW: Reset renewal state
+        setConfirmedHomonymName(null);
         setAvalName(''); setAvalAddress(''); setAvalCellphone('');
         setAval2Name(''); setAval2Address(''); setAval2Cellphone('');
         setAval3Name(''); setAval3Address(''); setAval3Cellphone('');
@@ -1130,6 +1271,10 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         setClientPhotoFile(null); setClientPhotoPreview(null);
         setAvalFacadeFile(null); setAvalFacadePreview(null);
         setAvalPhotoFile(null); setAvalPhotoPreview(null);
+        setAval2FacadeFile(null); setAval2FacadePreview(null);
+        setAval2PhotoFile(null); setAval2PhotoPreview(null);
+        setAval3FacadeFile(null); setAval3FacadePreview(null);
+        setAval3PhotoFile(null); setAval3PhotoPreview(null);
         setGuarantees([]); setAvalGuarantees([]); setScannedCode('');
         setAval1Guarantees([]); setAval2Guarantees([]); setAval3Guarantees([]);
         setNewAval1Guarantee(''); setNewAval2Guarantee(''); setNewAval3Guarantee('');
@@ -1273,16 +1418,17 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
         clients.forEach(cl => {
             if (cl.isArchived) return;
+            const cycle = getClientLoanCycle(cl, allWeeks);
             const normalizedName = removeAccents((cl.name || '').trim().toUpperCase());
             const normalizedAvalName = removeAccents((cl.avalName || '').trim().toUpperCase());
             const isAvalInThisRecord = normalizedAvalName === normalizedTyped ||
                 cl.avales?.some(a => removeAccents((a.name || '').trim().toUpperCase()) === normalizedTyped);
 
-            if (normalizedName === normalizedTyped) {
+            if (normalizedName === normalizedTyped && cycle.isActive) {
                 isAlreadyClient = true;
             }
 
-            if (isAvalInThisRecord) {
+            if (isAvalInThisRecord && cycle.isActive) {
                 if (!normalizedCurrentClient || normalizedName !== normalizedCurrentClient) {
                     avalCount++;
                 }
@@ -1295,7 +1441,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         } else {
             setCoincidenceAval(null);
         }
-    }, [clientName, clients, maxClientAsAval, maxAvalRegistrations]);
+    }, [clientName, clients, allWeeks, maxClientAsAval, maxAvalRegistrations]);
 
     // Coincidence check effects (disabled automatic popups while typing; modals trigger on explicit selection)
     useEffect(() => {
@@ -1466,19 +1612,34 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                         </div>
                     </div>
 
-                    {/* COMPLETENESS BADGES */}
-                    <div className="flex-shrink-0">
+                    {/* STATUS AND COMPLETENESS BADGES */}
+                    <div className="flex-shrink-0 flex flex-col items-end gap-1">
+                        {(() => {
+                            const cycle = getClientLoanCycle(client, allWeeks);
+                            return cycle.isActive ? (
+                                <span className="flex items-center gap-1 text-[8px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full uppercase">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                    {cycle.cycleLabel}
+                                </span>
+                            ) : (
+                                <span className="flex items-center gap-1 text-[8px] font-black text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full uppercase">
+                                    <Clock className="w-2.5 h-2.5 text-slate-400" />
+                                    {cycle.cycleLabel}
+                                </span>
+                            );
+                        })()}
+
                         {(() => {
                             const clientFin = financieras.find(f => f.id === client.financieraId);
                             const completion = checkClientCompleteness(client, clientFin);
                             return completion.isComplete ? (
-                                <span className="flex items-center gap-1 text-[9px] font-black text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full uppercase">
-                                    <CheckCircle className="w-3 h-3" /> COMPLETO
+                                <span className="flex items-center gap-1 text-[8px] font-black text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full uppercase">
+                                    <CheckCircle className="w-2.5 h-2.5" /> COMPLETO
                                 </span>
                             ) : (
                                 <div className="relative group/status flex justify-end">
-                                    <span className="flex items-center gap-1 text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full uppercase cursor-help">
-                                        <AlertTriangle className="w-3 h-3" /> INCOMPLETO
+                                    <span className="flex items-center gap-1 text-[8px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full uppercase cursor-help">
+                                        <AlertTriangle className="w-2.5 h-2.5" /> INCOMPLETO
                                     </span>
                                     <div className="pointer-events-none absolute bottom-full right-0 mb-2 w-max max-w-xs bg-slate-950 text-white text-[10px] rounded-lg p-2.5 opacity-0 group-hover/status:opacity-100 transition-opacity z-50 text-left shadow-2xl">
                                         <div className="font-black text-rose-400 mb-1 border-b border-slate-800 pb-1">FALTA INFORMACIÓN:</div>
@@ -1658,6 +1819,74 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 }}
             />
 
+            {/* AVAL 2 INPUTS */}
+            <input
+                type="file"
+                capture="user"
+                ref={guarantor2PhotoInputRef}
+                className="hidden"
+                onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                        const c = await compressImage(f);
+                        setAval2PhotoFile(c);
+                        const r = new FileReader();
+                        r.onload = () => setAval2PhotoPreview(r.result as string);
+                        r.readAsDataURL(c);
+                    }
+                }}
+            />
+            <input
+                type="file"
+                capture="environment"
+                ref={guarantor2FacadeInputRef}
+                className="hidden"
+                onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                        const c = await compressImage(f);
+                        setAval2FacadeFile(c);
+                        const r = new FileReader();
+                        r.onload = () => setAval2FacadePreview(r.result as string);
+                        r.readAsDataURL(c);
+                    }
+                }}
+            />
+
+            {/* AVAL 3 INPUTS */}
+            <input
+                type="file"
+                capture="user"
+                ref={guarantor3PhotoInputRef}
+                className="hidden"
+                onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                        const c = await compressImage(f);
+                        setAval3PhotoFile(c);
+                        const r = new FileReader();
+                        r.onload = () => setAval3PhotoPreview(r.result as string);
+                        r.readAsDataURL(c);
+                    }
+                }}
+            />
+            <input
+                type="file"
+                capture="environment"
+                ref={guarantor3FacadeInputRef}
+                className="hidden"
+                onChange={async (e) => {
+                    const f = e.target.files?.[0];
+                    if (f) {
+                        const c = await compressImage(f);
+                        setAval3FacadeFile(c);
+                        const r = new FileReader();
+                        r.onload = () => setAval3FacadePreview(r.result as string);
+                        r.readAsDataURL(c);
+                    }
+                }}
+            />
+
             <div className="flex justify-between items-start mb-8 px-1">
                 <div className="flex-1">
                     <h1 className="text-3xl font-black text-black leading-tight">
@@ -1695,6 +1924,30 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                         </div>
                         <span className="text-[9px] opacity-80 font-bold">Pulsa para escanear código del cliente</span>
                     </button>
+
+                    {/* FILTRO DE CICLO DE 13 SEMANAS */}
+                    <div className="flex bg-slate-100 p-1 rounded-2xl gap-1 shadow-inner">
+                        <button
+                            onClick={() => setClientActivityFilter('ALL')}
+                            className={`flex-1 py-2.5 rounded-xl font-black text-[9px] uppercase transition-all flex items-center justify-center gap-1 ${clientActivityFilter === 'ALL' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                            Todos ({supervisorClients.length})
+                        </button>
+                        <button
+                            onClick={() => setClientActivityFilter('ACTIVE')}
+                            className={`flex-1 py-2.5 rounded-xl font-black text-[9px] uppercase transition-all flex items-center justify-center gap-1 ${clientActivityFilter === 'ACTIVE' ? 'bg-emerald-600 text-white shadow-sm' : 'text-emerald-700 hover:text-emerald-900'}`}
+                        >
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            Activos ({activeSupervisorClientsCount})
+                        </button>
+                        <button
+                            onClick={() => setClientActivityFilter('INACTIVE')}
+                            className={`flex-1 py-2.5 rounded-xl font-black text-[9px] uppercase transition-all flex items-center justify-center gap-1 ${clientActivityFilter === 'INACTIVE' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                        >
+                            <Clock className="w-3 h-3" />
+                            Inactivos ({inactiveSupervisorClientsCount})
+                        </button>
+                    </div>
 
                     {/* SEMANA ACTUAL */}
                     <div className="space-y-3">
@@ -1840,7 +2093,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                 {!avalPhotoPreview ? (
                                                     <div onClick={() => guarantorPhotoInputRef.current?.click()} className="cursor-pointer py-6 space-y-2">
                                                         <User className="w-8 h-8 text-blue-500 mx-auto opacity-80" />
-                                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Foto Aval</p>
+                                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Foto Aval (Opcional)</p>
                                                     </div>
                                                 ) : (
                                                     <div className="relative">
@@ -2152,29 +2405,18 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                                     </div>
                                                                 </div>
 
-                                                                {/* Botones */}
+                                                                {/* Botón Acción Renovación */}
                                                                 <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100/80">
                                                                     <button
                                                                         type="button"
                                                                         onClick={() => {
-                                                                            setClientName(c.name);
-                                                                            setShowClientSuggestions(false);
-                                                                        }}
-                                                                        className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase transition-colors"
-                                                                    >
-                                                                        Usar
-                                                                    </button>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => {
-                                                                            setClientName(c.name);
                                                                             setShowClientSuggestions(false);
                                                                             handleSelectRenewalClient(c);
                                                                         }}
-                                                                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs flex items-center gap-1.5"
+                                                                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs flex items-center justify-center gap-1.5 active:scale-98"
                                                                     >
                                                                         <RefreshCw className="w-3.5 h-3.5" />
-                                                                        Renovar
+                                                                        Hacer Renovación con este Cliente
                                                                     </button>
                                                                 </div>
                                                             </div>
@@ -2479,6 +2721,31 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                         )}
                                     </div>
                                 </div>
+
+                                {/* FOTOGRAFÍAS DEL PRIMER AVAL */}
+                                {(requireGuarantorFacade || requireGuarantorPhoto) && (
+                                    <div className="space-y-3 pt-3 border-t border-slate-100">
+                                        <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{requiredAvales > 1 ? 'Fotografías del Primer Aval' : 'Fotografías del Aval'}</h4>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            {requireGuarantorFacade && (
+                                                <div className="space-y-2">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Fachada Aval 1</label>
+                                                    <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => guarantorFacadeInputRef.current?.click()}>
+                                                        {avalFacadePreview ? <img src={avalFacadePreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><Home className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                    </div>
+                                                </div>
+                                            )}
+                                            {requireGuarantorPhoto && (
+                                                <div className="space-y-2">
+                                                    <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Foto Aval 1 (Opcional)</label>
+                                                    <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => guarantorPhotoInputRef.current?.click()}>
+                                                        {avalPhotoPreview ? <img src={avalPhotoPreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><User className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {/* AVAL 2 */}
@@ -2525,6 +2792,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                                     setAval2Name(c.name);
                                                                     setAval2Address(c.address || '');
                                                                     setAval2Cellphone(c.cellphone || '');
+                                                                    if (c.facadeUrl) setAval2FacadePreview(c.facadeUrl);
+                                                                    if (c.photoUrl) setAval2PhotoPreview(c.photoUrl);
                                                                     setAval2Search('');
                                                                 }}
                                                                 className="w-full p-3 text-left hover:bg-blue-50 transition-colors flex items-center justify-between group"
@@ -2574,6 +2843,31 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                             )}
                                         </div>
                                     </div>
+
+                                    {/* FOTOGRAFÍAS DEL SEGUNDO AVAL */}
+                                    {(requireGuarantorFacade || requireGuarantorPhoto) && (
+                                        <div className="space-y-3 pt-3 border-t border-slate-100">
+                                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fotografías del Segundo Aval</h4>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {requireGuarantorFacade && (
+                                                    <div className="space-y-2">
+                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Fachada Aval 2</label>
+                                                        <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => guarantor2FacadeInputRef.current?.click()}>
+                                                            {aval2FacadePreview ? <img src={aval2FacadePreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><Home className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {requireGuarantorPhoto && (
+                                                    <div className="space-y-2">
+                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Foto Aval 2 (Opcional)</label>
+                                                        <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => guarantor2PhotoInputRef.current?.click()}>
+                                                            {aval2PhotoPreview ? <img src={aval2PhotoPreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><User className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -2614,31 +2908,31 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                             )}
                                         </div>
                                     </div>
-                                </div>
-                            )}
 
-                            {/* FOTOGRAFIAS DEL AVAL (Condicionales según Financiera) */}
-                            {(requireGuarantorFacade || requireGuarantorPhoto) && (
-                                <div className="space-y-3 bg-white p-5 rounded-3xl border border-blue-100">
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">FOTOGRAFIAS DEL AVAL</h4>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {requireGuarantorFacade && (
-                                            <div className="space-y-2">
-                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Fachada Aval</label>
-                                                <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => guarantorFacadeInputRef.current?.click()}>
-                                                    {avalFacadePreview ? <img src={avalFacadePreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><Home className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
-                                                </div>
+                                    {/* FOTOGRAFÍAS DEL TERCER AVAL */}
+                                    {(requireGuarantorFacade || requireGuarantorPhoto) && (
+                                        <div className="space-y-3 pt-3 border-t border-slate-100">
+                                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Fotografías del Tercer Aval</h4>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {requireGuarantorFacade && (
+                                                    <div className="space-y-2">
+                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Fachada Aval 3</label>
+                                                        <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => guarantor3FacadeInputRef.current?.click()}>
+                                                            {aval3FacadePreview ? <img src={aval3FacadePreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><Home className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {requireGuarantorPhoto && (
+                                                    <div className="space-y-2">
+                                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Foto Aval 3 (Opcional)</label>
+                                                        <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => guarantor3PhotoInputRef.current?.click()}>
+                                                            {aval3PhotoPreview ? <img src={aval3PhotoPreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><User className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                        )}
-                                        {requireGuarantorPhoto && (
-                                            <div className="space-y-2">
-                                                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Foto Aval</label>
-                                                <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => guarantorPhotoInputRef.current?.click()}>
-                                                    {avalPhotoPreview ? <img src={avalPhotoPreview} className="w-full h-full object-cover" /> : <div className="text-center p-4"><User className="w-8 h-8 text-blue-400 mx-auto mb-1" /><p className="text-[8px] font-black text-slate-400 uppercase">Tocar</p></div>}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -2921,26 +3215,14 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                         <button
                                                             type="button"
                                                             onClick={() => {
-                                                                setClientName(c.name);
-                                                                setShowClientSuggestions(false);
-                                                                setFullScreenCoincidences(null);
-                                                            }}
-                                                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-black text-[10px] uppercase transition-colors"
-                                                        >
-                                                            Usar
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setClientName(c.name);
                                                                 setShowClientSuggestions(false);
                                                                 setFullScreenCoincidences(null);
                                                                 handleSelectRenewalClient(c);
                                                             }}
-                                                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-black text-[10px] uppercase transition-colors shadow-2xs flex items-center gap-1"
+                                                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs flex items-center gap-1.5 active:scale-95"
                                                         >
-                                                            <RefreshCw className="w-3 h-3" />
-                                                            Renovar
+                                                            <RefreshCw className="w-3.5 h-3.5" />
+                                                            Hacer Renovación
                                                         </button>
                                                     </div>
                                                 </div>
@@ -2997,81 +3279,95 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 )}
             </AnimatePresence>
 
-            {/* MODAL COINCIDENCIA DE NOMBRE */}
+            {/* MODAL COINCIDENCIA DE NOMBRE / ANTI-DUPLICADOS */}
             <AnimatePresence>
                 {coincidenceClient && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
+                        className="fixed inset-0 z-[150] flex items-center justify-center bg-black/75 p-4 backdrop-blur-md"
                     >
                         <motion.div
                             initial={{ scale: 0.9, y: 20 }}
                             animate={{ scale: 1, y: 0 }}
                             exit={{ scale: 0.9, y: 20 }}
-                            className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden"
+                            className="bg-white rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden border border-amber-200"
                         >
-                            <div className="bg-amber-500 p-4 flex items-center justify-between text-white">
-                                <div className="flex items-center gap-3">
-                                    <AlertTriangle className="w-6 h-6 animate-pulse" />
-                                    <h3 className="font-black uppercase text-sm tracking-tight text-white">Persona ya registrada</h3>
+                            <div className="bg-gradient-to-r from-amber-500 to-orange-500 p-4 flex items-center justify-between text-white">
+                                <div className="flex items-center gap-2.5">
+                                    <AlertTriangle className="w-5 h-5 animate-bounce" />
+                                    <div>
+                                        <h3 className="font-black uppercase text-xs tracking-wide text-white">Cliente Ya Registrado</h3>
+                                        <p className="text-[9px] text-amber-100 font-bold uppercase">Prevención de Duplicados</p>
+                                    </div>
                                 </div>
                                 <button 
-                                    onClick={() => {
-                                        const currentName = removeAccents(clientName.trim().toUpperCase());
-                                        if (currentName) setIgnoredNames(prev => [...prev, currentName]);
-                                        setCoincidenceClient(null);
-                                    }}
-                                    className="p-1 rounded-full hover:bg-amber-600/50 transition-colors text-white"
+                                    onClick={() => setCoincidenceClient(null)}
+                                    className="p-1.5 rounded-full hover:bg-black/20 transition-colors text-white"
                                 >
-                                    <X className="w-5 h-5" />
+                                    <X className="w-4 h-4" />
                                 </button>
                             </div>
 
-                            <div className="p-6 space-y-6">
-                                <div className="flex flex-col items-center text-center">
-                                    <div className="w-20 h-20 rounded-2xl overflow-hidden border-4 border-slate-100 shadow-md mb-3 bg-slate-50">
+                            <div className="p-5 space-y-4">
+                                <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                                    <div className="w-14 h-14 rounded-xl overflow-hidden border-2 border-amber-200 bg-white flex-shrink-0 shadow-xs">
                                         {coincidenceClient.clientPhotoUrl || coincidenceClient.facadeUrl ? (
                                             <CachedImage src={coincidenceClient.clientPhotoUrl || coincidenceClient.facadeUrl || ''} className="w-full h-full object-cover" />
                                         ) : (
                                             <div className="w-full h-full flex items-center justify-center text-slate-300">
-                                                <User className="w-10 h-10" />
+                                                <User className="w-6 h-6" />
                                             </div>
                                         )}
                                     </div>
-                                    <h4 className="text-lg font-black text-slate-900 uppercase leading-tight">{coincidenceClient.name}</h4>
+                                    <div className="min-w-0 flex-1">
+                                        <h4 className="text-sm font-black text-slate-900 uppercase leading-snug truncate">{coincidenceClient.name}</h4>
+                                        <p className="text-[10px] text-slate-500 uppercase truncate mt-0.5"><strong className="text-slate-400">Dom:</strong> {coincidenceClient.address || 'Sin dom.'}</p>
+                                        <p className="text-[10px] text-slate-500 uppercase truncate"><strong className="text-slate-400">Cel:</strong> {coincidenceClient.cellphone || 'Sin cel.'}</p>
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                            <span className="text-[8.5px] bg-indigo-50 text-indigo-700 font-black px-1.5 py-0.5 rounded-md uppercase">
+                                                Sup: {allSupervisors.find(s => s.id === coincidenceClient.supervisorId)?.name || 'S/S'}
+                                            </span>
+                                            {coincidenceClient.registeredAt && (
+                                                <span className="text-[8.5px] bg-slate-200 text-slate-700 font-bold px-1.5 py-0.5 rounded-md">
+                                                    {new Date(coincidenceClient.registeredAt).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
 
-                                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-2 text-center">
-                                    <p className="text-xs font-bold text-slate-700 leading-snug">
-                                        Esta persona ya está registrada. Por reglamento, solo se permite <span className="text-indigo-600 font-black">1 Préstamo</span> y ser <span className="text-indigo-600 font-black">Aval de 2 clientes</span>.
-                                    </p>
-                                    <p className="text-xs font-black text-indigo-600 uppercase tracking-wide pt-1">
-                                        ¿Quieres renovar a esta persona?
+                                <div className="bg-amber-50/80 p-3.5 rounded-2xl border border-amber-200/60 text-center space-y-1">
+                                    <p className="text-[11px] font-bold text-amber-900 leading-snug">
+                                        Para mantener el historial y evitar duplicados, debes realizar una <span className="font-black text-indigo-700">RENOVACIÓN</span> de este cliente.
                                     </p>
                                 </div>
 
-                                <div className="flex gap-3">
+                                <div className="space-y-2 pt-1">
                                     <button
-                                        onClick={() => {
-                                            const currentName = removeAccents(clientName.trim().toUpperCase());
-                                            if (currentName) setIgnoredNames(prev => [...prev, currentName]);
-                                            setCoincidenceClient(null);
-                                        }}
-                                        className="flex-1 py-3.5 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-wider hover:bg-slate-200 transition-all active:scale-95"
-                                    >
-                                        Cerrar / Ignorar
-                                    </button>
-                                    <button
+                                        type="button"
                                         onClick={() => {
                                             handleSelectRenewalClient(coincidenceClient);
                                             setCoincidenceClient(null);
                                         }}
-                                        className="flex-1 py-3.5 bg-indigo-600 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-lg shadow-indigo-100 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-all active:scale-95"
+                                        className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white rounded-2xl font-black uppercase text-xs tracking-wider shadow-md shadow-indigo-100 flex items-center justify-center gap-2 transition-all active:scale-95"
                                     >
-                                        <RefreshCw className="w-4 h-4" />
-                                        Renovar
+                                        <RefreshCw className="w-4 h-4 animate-spin" />
+                                        Hacer Renovación con este QR
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const normalizedName = removeAccents((coincidenceClient.name || '').trim().replace(/\s+/g, ' ').toUpperCase());
+                                            if (window.confirm(`¿Confirmas que "${coincidenceClient.name}" que estás registrando es OTRA PERSONA DISTINTA (Homónimo) y no este cliente previo?`)) {
+                                                setConfirmedHomonymName(normalizedName);
+                                                setCoincidenceClient(null);
+                                            }
+                                        }}
+                                        className="w-full py-2 text-slate-400 hover:text-slate-600 font-bold uppercase text-[9.5px] tracking-wider transition-colors text-center"
+                                    >
+                                        Es una persona distinta (Homónimo)
                                     </button>
                                 </div>
                             </div>
@@ -3666,29 +3962,18 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                                         </div>
                                                                     </div>
 
-                                                                    {/* Botones */}
+                                                                    {/* Botón Acción Renovación */}
                                                                     <div className="flex items-center justify-end gap-2 pt-1 border-t border-slate-100/80">
                                                                         <button
                                                                             type="button"
                                                                             onClick={() => {
-                                                                                setClientName(c.name);
-                                                                                setShowClientSuggestions(false);
-                                                                            }}
-                                                                            className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-black text-[10px] uppercase transition-colors"
-                                                                        >
-                                                                            Usar
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => {
-                                                                                setClientName(c.name);
                                                                                 setShowClientSuggestions(false);
                                                                                 handleSelectRenewalClient(c);
                                                                             }}
-                                                                            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs flex items-center gap-1.5"
+                                                                            className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs flex items-center justify-center gap-1.5 active:scale-98"
                                                                         >
                                                                             <RefreshCw className="w-3.5 h-3.5" />
-                                                                            Renovar
+                                                                            Hacer Renovación con este Cliente
                                                                         </button>
                                                                     </div>
                                                                 </div>
@@ -4149,7 +4434,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                             {/* FOTO AVAL */}
                                             {requireGuarantorPhoto && (
                                                 <div className="space-y-2">
-                                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Foto Personal</p>
+                                                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">Foto Personal (Opcional)</p>
                                                     <div className="aspect-square border-4 border-dashed border-slate-100 rounded-3xl flex items-center justify-center bg-white overflow-hidden cursor-pointer relative group" onClick={() => {
                                                         const el = document.getElementById('edit-aval-person-input');
                                                         if (el) (el as HTMLInputElement).click();
