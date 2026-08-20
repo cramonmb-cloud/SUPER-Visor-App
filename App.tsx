@@ -480,12 +480,12 @@ const App: React.FC = () => {
           if (updatedAvales[index]) {
               updatedAvales[index] = {
                   ...updatedAvales[index],
-                  facadeUrl: url || updatedAvales[index].facadeUrl,
-                  photoUrl: photoUrl || updatedAvales[index].photoUrl,
-                  latitude: lat,
-                  longitude: lng,
+                  facadeUrl: url || updatedAvales[index].facadeUrl || '',
+                  photoUrl: photoUrl || updatedAvales[index].photoUrl || '',
+                  latitude: lat || updatedAvales[index].latitude,
+                  longitude: lng || updatedAvales[index].longitude,
                   visitTimestamp: isComplete ? Date.now() : updatedAvales[index].visitTimestamp,
-                  guarantees: guarantees || updatedAvales[index].guarantees
+                  guarantees: (guarantees && guarantees.length > 0) ? guarantees : (updatedAvales[index].guarantees || [])
               };
           } else if (index === 0) {
               // Syncing legacy data to array
@@ -493,29 +493,30 @@ const App: React.FC = () => {
                   name: clientDoc.avalName || '',
                   address: clientDoc.avalAddress || '',
                   cellphone: clientDoc.avalCellphone || '',
-                  facadeUrl: url,
-                  photoUrl: photoUrl,
-                  latitude: lat,
-                  longitude: lng,
-                  visitTimestamp: isComplete ? Date.now() : undefined,
-                  guarantees: guarantees
+                  facadeUrl: url || clientDoc.avalFacadeUrl || '',
+                  photoUrl: photoUrl || clientDoc.avalPhotoUrl || '',
+                  latitude: lat || clientDoc.avalLatitude,
+                  longitude: lng || clientDoc.avalLongitude,
+                  visitTimestamp: isComplete ? Date.now() : clientDoc.avalVisitTimestamp,
+                  guarantees: guarantees || []
               };
           }
           
           await updateDoc(clientRef, { 
               avales: updatedAvales,
               ...(index === 0 ? {
-                  avalFacadeUrl: url, 
-                  avalPhotoUrl: photoUrl,
-                  avalLatitude: lat, 
-                  avalLongitude: lng, 
+                  avalFacadeUrl: url || clientDoc.avalFacadeUrl || '', 
+                  avalPhotoUrl: photoUrl || clientDoc.avalPhotoUrl || '',
+                  avalLatitude: lat || clientDoc.avalLatitude || 0, 
+                  avalLongitude: lng || clientDoc.avalLongitude || 0, 
                   ...(isComplete ? { avalVisitTimestamp: Date.now() } : {})
               } : {})
           });
       } else {
           // Fallback simple update if donor doc not found in state
           await updateDoc(clientRef, { 
-              avalFacadeUrl: url, 
+              ...(url ? { avalFacadeUrl: url } : {}),
+              ...(photoUrl ? { avalPhotoUrl: photoUrl } : {}),
               avalLatitude: lat, 
               avalLongitude: lng, 
               ...(isComplete ? { avalVisitTimestamp: Date.now() } : {})

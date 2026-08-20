@@ -450,6 +450,47 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
     return true;
   });
 
+  const resolveAvalPhotos = React.useCallback((avalName?: string, currentFacade?: string, currentPhoto?: string) => {
+    if (!avalName) return { facadeUrl: currentFacade || '', photoUrl: currentPhoto || '' };
+    const norm = avalName.trim().toUpperCase();
+    if (!norm) return { facadeUrl: currentFacade || '', photoUrl: currentPhoto || '' };
+
+    let facade = currentFacade || '';
+    let photo = currentPhoto || '';
+
+    if (facade && photo) return { facadeUrl: facade, photoUrl: photo };
+
+    // 1. Check if person is a Client with their own credit
+    const clientMatch = data.clients.find(c => !c.isArchived && c.name.trim().toUpperCase() === norm);
+    if (clientMatch) {
+      if (!photo && clientMatch.clientPhotoUrl) photo = clientMatch.clientPhotoUrl;
+      if (!facade && clientMatch.facadeUrl) facade = clientMatch.facadeUrl;
+    }
+
+    if (facade && photo) return { facadeUrl: facade, photoUrl: photo };
+
+    // 2. Check other clients where this person is registered as an aval
+    for (const c of data.clients) {
+      if (c.isArchived) continue;
+      if (c.avales && c.avales.length > 0) {
+        for (const a of c.avales) {
+          if (a.name && a.name.trim().toUpperCase() === norm) {
+            if (!photo && a.photoUrl) photo = a.photoUrl;
+            if (!facade && a.facadeUrl) facade = a.facadeUrl;
+          }
+          if (facade && photo) break;
+        }
+      }
+      if (c.avalName && c.avalName.trim().toUpperCase() === norm) {
+        if (!photo && c.avalPhotoUrl) photo = c.avalPhotoUrl;
+        if (!facade && c.avalFacadeUrl) facade = c.avalFacadeUrl;
+      }
+      if (facade && photo) break;
+    }
+
+    return { facadeUrl: facade, photoUrl: photo };
+  }, [data.clients]);
+
   // Mejoramos la lógica de filtrado para manejar ciclos independientes por financiera
   const uniqueGuarantors = React.useMemo(() => {
     const guarantorMap: Record<string, {
@@ -564,12 +605,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         }
     });
 
-    // Link with own credits (using full client list for overall verification)
+    // Link with own credits (using full client list for overall verification) and resolve photos
     Object.keys(guarantorMap).forEach(name => {
         const clientFound = data.clients.find(c => c.name.trim().toUpperCase() === name && !c.isArchived);
         if (clientFound) {
             guarantorMap[name].linkedClientId = clientFound.id;
+            if (!guarantorMap[name].guarantorInstance.photoUrl && clientFound.clientPhotoUrl) {
+                guarantorMap[name].guarantorInstance.photoUrl = clientFound.clientPhotoUrl;
+            }
+            if (!guarantorMap[name].guarantorInstance.facadeUrl && clientFound.facadeUrl) {
+                guarantorMap[name].guarantorInstance.facadeUrl = clientFound.facadeUrl;
+            }
+            if (!guarantorMap[name].address && clientFound.address) {
+                guarantorMap[name].address = clientFound.address;
+            }
+            if (!guarantorMap[name].cellphone && clientFound.cellphone) {
+                guarantorMap[name].cellphone = clientFound.cellphone;
+            }
         }
+        
+        // Final fallback photo resolution if still missing
+        if (!guarantorMap[name].guarantorInstance.photoUrl || !guarantorMap[name].guarantorInstance.facadeUrl) {
+            const resolved = resolveAvalPhotos(name, guarantorMap[name].guarantorInstance.facadeUrl, guarantorMap[name].guarantorInstance.photoUrl);
+            if (!guarantorMap[name].guarantorInstance.photoUrl && resolved.photoUrl) {
+                guarantorMap[name].guarantorInstance.photoUrl = resolved.photoUrl;
+            }
+            if (!guarantorMap[name].guarantorInstance.facadeUrl && resolved.facadeUrl) {
+                guarantorMap[name].guarantorInstance.facadeUrl = resolved.facadeUrl;
+            }
+        }
+
         guarantorMap[name].activeClientsCount = guarantorMap[name].clients.filter(c => c.isActiveLoan).length;
     });
 
@@ -4549,12 +4614,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                       address: selectedClientForDetails.avalAddress, 
                                       cellphone: selectedClientForDetails.avalCellphone, 
                                       facadeUrl: selectedClientForDetails.avalFacadeUrl,
+                                      photoUrl: selectedClientForDetails.avalPhotoUrl,
                                       latitude: selectedClientForDetails.avalLatitude,
                                       longitude: selectedClientForDetails.avalLongitude,
                                       visitTimestamp: selectedClientForDetails.avalVisitTimestamp,
                                       guarantees: []
                                     }]
-                                ).map((aval, idx) => (
+                                ).map((aval, idx) => {
+                                    const resolved = resolveAvalPhotos(aval.name, aval.facadeUrl, aval.photoUrl);
+                                    const displayFacade = resolved.facadeUrl;
+                                    const displayPhoto = resolved.photoUrl;
+
+                                    return (
                                     <div key={idx} className="bg-blue-50/40 p-6 rounded-3xl border border-blue-100 space-y-4 shadow-sm">
                                         <div className="flex justify-between items-start">
                                             <div className="space-y-4 flex-1">
@@ -4593,9 +4664,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             <div className="space-y-3">
                                                 <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2 px-1"><Home className="w-3 h-3"/> Fachada Aval {idx + 1}</p>
-                                                {aval.facadeUrl ? (
+                                                {displayFacade ? (
                                                     <div className="relative group">
-                                                        <CachedImage src={aval.facadeUrl} className="w-full h-48 object-cover rounded-[1.5rem] border-2 border-blue-100 shadow-sm transition-transform group-hover:scale-[1.01]" alt={`Fachada Aval ${idx + 1}`} />
+                                                        <CachedImage src={displayFacade} className="w-full h-48 object-cover rounded-[1.5rem] border-2 border-blue-100 shadow-sm transition-transform group-hover:scale-[1.01]" alt={`Fachada Aval ${idx + 1}`} />
                                                         <div className="absolute top-4 right-4 bg-blue-600/30 backdrop-blur-md text-white p-2 rounded-full shadow-lg"><CheckCircle className="w-4 h-4"/></div>
                                                     </div>
                                                 ) : (
@@ -4606,9 +4677,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                             </div>
                                             <div className="space-y-3">
                                                 <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest flex items-center gap-2 px-1"><UserCheck className="w-3 h-3"/> Persona Aval {idx + 1}</p>
-                                                {aval.photoUrl ? (
+                                                {displayPhoto ? (
                                                     <div className="relative group">
-                                                        <CachedImage src={aval.photoUrl} className="w-full h-48 object-cover rounded-[1.5rem] border-2 border-blue-100 shadow-sm transition-transform group-hover:scale-[1.01]" alt={`Persona Aval ${idx + 1}`} />
+                                                        <CachedImage src={displayPhoto} className="w-full h-48 object-cover rounded-[1.5rem] border-2 border-blue-100 shadow-sm transition-transform group-hover:scale-[1.01]" alt={`Persona Aval ${idx + 1}`} />
                                                         <div className="absolute top-4 right-4 bg-blue-600/30 backdrop-blur-md text-white p-2 rounded-full shadow-lg"><UserCheck className="w-4 h-4"/></div>
                                                     </div>
                                                 ) : (
@@ -4620,7 +4691,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                         </div>
 
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                             </div>
                         </div>
