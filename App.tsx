@@ -1208,7 +1208,7 @@ const App: React.FC = () => {
 
               <div className="space-y-2">
                 <span className="px-3 py-1 bg-indigo-100 text-indigo-800 text-[10px] font-black uppercase rounded-full tracking-wider border border-indigo-200">
-                  Nueva Versión {appState.settings?.versionName || ''}
+                  Nueva Versión v{VERSION}
                 </span>
                 <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tight">
                   Actualización Requerida
