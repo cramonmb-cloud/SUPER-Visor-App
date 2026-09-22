@@ -475,53 +475,46 @@ const App: React.FC = () => {
       const clientRef = doc(db, 'clients', clientId);
       const clientDoc = appState.clients.find(c => c.id === clientId);
       
-      if (clientDoc) {
-          const updatedAvales = [...(clientDoc.avales || [])];
-          if (updatedAvales[index]) {
-              updatedAvales[index] = {
-                  ...updatedAvales[index],
-                  facadeUrl: url || updatedAvales[index].facadeUrl || '',
-                  photoUrl: photoUrl || updatedAvales[index].photoUrl || '',
-                  latitude: lat || updatedAvales[index].latitude,
-                  longitude: lng || updatedAvales[index].longitude,
-                  visitTimestamp: isComplete ? Date.now() : updatedAvales[index].visitTimestamp,
-                  guarantees: (guarantees && guarantees.length > 0) ? guarantees : (updatedAvales[index].guarantees || [])
-              };
-          } else if (index === 0) {
-              // Syncing legacy data to array
-              updatedAvales[0] = {
-                  name: clientDoc.avalName || '',
-                  address: clientDoc.avalAddress || '',
-                  cellphone: clientDoc.avalCellphone || '',
-                  facadeUrl: url || clientDoc.avalFacadeUrl || '',
-                  photoUrl: photoUrl || clientDoc.avalPhotoUrl || '',
-                  latitude: lat || clientDoc.avalLatitude,
-                  longitude: lng || clientDoc.avalLongitude,
-                  visitTimestamp: isComplete ? Date.now() : clientDoc.avalVisitTimestamp,
-                  guarantees: guarantees || []
-              };
-          }
-          
-          await updateDoc(clientRef, { 
-              avales: updatedAvales,
-              ...(index === 0 ? {
-                  avalFacadeUrl: url || clientDoc.avalFacadeUrl || '', 
-                  avalPhotoUrl: photoUrl || clientDoc.avalPhotoUrl || '',
-                  avalLatitude: lat || clientDoc.avalLatitude || 0, 
-                  avalLongitude: lng || clientDoc.avalLongitude || 0, 
-                  ...(isComplete ? { avalVisitTimestamp: Date.now() } : {})
-              } : {})
-          });
-      } else {
-          // Fallback simple update if donor doc not found in state
-          await updateDoc(clientRef, { 
-              ...(url ? { avalFacadeUrl: url } : {}),
-              ...(photoUrl ? { avalPhotoUrl: photoUrl } : {}),
-              avalLatitude: lat, 
-              avalLongitude: lng, 
-              ...(isComplete ? { avalVisitTimestamp: Date.now() } : {})
+      const existingAvales = clientDoc?.avales ? [...clientDoc.avales] : [];
+      
+      // Ensure existingAvales has at least (index + 1) slots
+      while (existingAvales.length <= index) {
+          const isPrimary = existingAvales.length === 0;
+          existingAvales.push({
+              name: (isPrimary && clientDoc?.avalName) ? clientDoc.avalName : '',
+              address: (isPrimary && clientDoc?.avalAddress) ? clientDoc.avalAddress : '',
+              cellphone: (isPrimary && clientDoc?.avalCellphone) ? clientDoc.avalCellphone : '',
+              facadeUrl: (isPrimary && clientDoc?.avalFacadeUrl) ? clientDoc.avalFacadeUrl : '',
+              photoUrl: (isPrimary && clientDoc?.avalPhotoUrl) ? clientDoc.avalPhotoUrl : '',
+              latitude: (isPrimary && clientDoc?.avalLatitude) ? clientDoc.avalLatitude : 0,
+              longitude: (isPrimary && clientDoc?.avalLongitude) ? clientDoc.avalLongitude : 0,
+              visitTimestamp: (isPrimary && clientDoc?.avalVisitTimestamp) ? clientDoc.avalVisitTimestamp : undefined,
+              guarantees: []
           });
       }
+
+      existingAvales[index] = {
+          ...existingAvales[index],
+          facadeUrl: url || existingAvales[index].facadeUrl || '',
+          photoUrl: photoUrl || existingAvales[index].photoUrl || '',
+          latitude: lat || existingAvales[index].latitude || 0,
+          longitude: lng || existingAvales[index].longitude || 0,
+          visitTimestamp: isComplete ? Date.now() : existingAvales[index].visitTimestamp,
+          guarantees: guarantees !== undefined ? guarantees : (existingAvales[index].guarantees || [])
+      };
+
+      const updatePayload: any = {
+          avales: existingAvales,
+          ...(index === 0 ? {
+              avalFacadeUrl: url || clientDoc?.avalFacadeUrl || existingAvales[0].facadeUrl || '',
+              avalPhotoUrl: photoUrl || clientDoc?.avalPhotoUrl || existingAvales[0].photoUrl || '',
+              avalLatitude: lat || clientDoc?.avalLatitude || existingAvales[0].latitude || 0,
+              avalLongitude: lng || clientDoc?.avalLongitude || existingAvales[0].longitude || 0,
+              ...(isComplete ? { avalVisitTimestamp: Date.now() } : {})
+          } : {})
+      };
+
+      await updateDoc(clientRef, updatePayload);
   };
   const createNextWeek = async (financieraId: string) => {
       // 1. Deactivate all currently active weeks for THIS financiera
@@ -1004,6 +997,43 @@ const App: React.FC = () => {
     }
   };
 
+  const moveClientsToSupervisor = async (clientIds: string[], targetSupervisorId: string) => {
+    if (currentUser?.role !== UserRole.ADMIN && currentUser?.role !== UserRole.VIEWER) return;
+
+    const targetSupervisor = appState.supervisors.find(s => s.id === targetSupervisorId);
+    if (!targetSupervisor) return;
+
+    try {
+      const batch = writeBatch(db);
+      clientIds.forEach(id => {
+        const client = appState.clients.find(c => c.id === id);
+        const updateData: Record<string, any> = {
+          supervisorId: targetSupervisorId,
+        };
+        // Preserve original registering supervisor if not already recorded
+        if (client && !client.registeredBySupervisorId) {
+          updateData.registeredBySupervisorId = client.supervisorId;
+        }
+        // If target supervisor has a financiera, update the client's financiera so the supervisor can query it
+        if (targetSupervisor.financieraId) {
+          updateData.financieraId = targetSupervisor.financieraId;
+        }
+        batch.update(doc(db, 'clients', id), updateData);
+      });
+
+      // Also update visits associated with these clients so the new supervisor sees their visits in real-time
+      const visitsToMove = appState.visits.filter(v => clientIds.includes(v.clientId));
+      visitsToMove.forEach(v => {
+        batch.update(doc(db, 'visits', v.id), { supervisorId: targetSupervisorId });
+      });
+
+      await batch.commit();
+    } catch (error) {
+      console.error("Error moving clients to supervisor:", error);
+      alert("Hubo un error al reasignar la supervisora.");
+    }
+  };
+
   const validQRs = new Set(appState.qrBatches.flatMap(b => b.codes || []).map(code => code.trim().toUpperCase()));
   const dashboardData = currentUser?.role === UserRole.VIEWER ? (() => {
     const user = currentUser.data as SystemUser;
@@ -1166,6 +1196,7 @@ const App: React.FC = () => {
                 onDeleteWeek={deleteWeek}
                 onMoveClientsToWeek={moveClientsToWeek}
                 onMoveClientsToFinanciera={moveClientsToFinanciera}
+                onMoveClientsToSupervisor={moveClientsToSupervisor}
                 onMigrateWeeksToLaFortuna={migrateWeeksToLaFortuna}
                 onAddApiKey={addApiKey}
                 onUpdateApiKey={updateApiKey}

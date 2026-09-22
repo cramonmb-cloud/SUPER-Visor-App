@@ -37,6 +37,7 @@ interface AdminPanelProps {
   onBatchUpdateSupervisors: (ids: string[], data: Partial<Supervisor>) => void;
   onMoveClientsToWeek: (clientIds: string[], targetWeekId: string) => void;
   onMoveClientsToFinanciera: (clientIds: string[], targetFinancieraId: string) => void;
+  onMoveClientsToSupervisor?: (clientIds: string[], targetSupervisorId: string) => void | Promise<void>;
   fullSupervisorsList: Supervisor[];
   onCreateWeek: (financieraId: string) => void;
   onCloseWeek: (financieraId: string) => void;
@@ -110,6 +111,7 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
     } else {
         let providedGuarantors = 0;
         const minGuaranteesForAval = financiera?.minGuaranteesForAval ?? 0;
+        const reqAvalGuarantees = !!financiera?.requireGuaranteesForAval;
         
         if (hasGuarantorsArray && client.avales) {
             providedGuarantors = client.avales.length;
@@ -120,7 +122,7 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
                 if (financiera?.requireGuarantorFacade !== false && !g.facadeUrl) {
                     missing.push(`Fachada Aval ${i+1}`);
                 }
-                if (minGuaranteesForAval > 0 && (!g.guarantees || g.guarantees.length < minGuaranteesForAval)) {
+                if (reqAvalGuarantees && minGuaranteesForAval > 0 && (!g.guarantees || g.guarantees.length < minGuaranteesForAval)) {
                     missing.push(`Garantías Aval ${i+1} (Mínimo: ${minGuaranteesForAval})`);
                 }
             });
@@ -132,7 +134,7 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
             if (financiera?.requireGuarantorFacade !== false && !client.avalFacadeUrl && !client.avalVisitTimestamp) {
                  missing.push(`Fachada Aval Principal`);
             }
-            if (minGuaranteesForAval > 0) {
+            if (reqAvalGuarantees && minGuaranteesForAval > 0 && (!client.avales?.[0]?.guarantees || client.avales[0].guarantees.length < minGuaranteesForAval)) {
                  missing.push(`Garantías Aval Principal (Mínimo: ${minGuaranteesForAval})`);
             }
         }
@@ -150,7 +152,7 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
 
 export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const { 
-    data, isSuperAdmin, isViewer, viewerCanCreateSups, viewerCanManageWeeks, onAddSupervisor, onUpdateSupervisor, onGenerateQR, onDeleteSupervisor, onUpdateSettings, onAddSystemUser, onUpdateSystemUser, onDeleteSystemUser, onAddFinanciera, onUpdateFinanciera, onDeleteFinanciera, onDeleteQRBatch, onBatchUpdateSupervisors, onUpdateClient, onDeleteClient, onFetchClient, onSearchClientsByName, onMoveClientsToWeek, onMoveClientsToFinanciera, fullSupervisorsList, onCreateWeek, onCloseWeek, onReopenWeek, onAddManualWeek, onDeleteWeek, onMigrateWeeksToLaFortuna, onAddApiKey, onUpdateApiKey, onDeleteApiKey
+    data, isSuperAdmin, isViewer, viewerCanCreateSups, viewerCanManageWeeks, onAddSupervisor, onUpdateSupervisor, onGenerateQR, onDeleteSupervisor, onUpdateSettings, onAddSystemUser, onUpdateSystemUser, onDeleteSystemUser, onAddFinanciera, onUpdateFinanciera, onDeleteFinanciera, onDeleteQRBatch, onBatchUpdateSupervisors, onUpdateClient, onDeleteClient, onFetchClient, onSearchClientsByName, onMoveClientsToWeek, onMoveClientsToFinanciera, onMoveClientsToSupervisor, fullSupervisorsList, onCreateWeek, onCloseWeek, onReopenWeek, onAddManualWeek, onDeleteWeek, onMigrateWeeksToLaFortuna, onAddApiKey, onUpdateApiKey, onDeleteApiKey
   } = props;
 
   // DESIGN SWITCHER - Permite renderizar la nueva v2 si está activa
@@ -244,11 +246,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [editClientAddress, setEditClientAddress] = useState('');
   const [editClientPhone, setEditClientPhone] = useState('');
   const [editClientCredit, setEditClientCredit] = useState(0);
+  const [editClientSupervisorId, setEditClientSupervisorId] = useState('');
   const [editClientAvalName, setEditClientAvalName] = useState('');
   const [editClientAvalAddress, setEditClientAvalAddress] = useState('');
   const [editClientAvalPhone, setEditClientAvalPhone] = useState('');
   const [editClientGuarantees, setEditClientGuarantees] = useState<Guarantee[]>([]);
   const [newGuaranteeDesc, setNewGuaranteeDesc] = useState('');
+  const [editClientAvalGuarantees, setEditClientAvalGuarantees] = useState<Guarantee[]>([]);
+  const [newAvalGuaranteeDesc, setNewAvalGuaranteeDesc] = useState('');
 
   // Bulk Actions State
   const [selectedClientIds, setSelectedClientIds] = useState<Set<string>>(new Set());
@@ -256,6 +261,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [targetMoveWeekId, setTargetMoveWeekId] = useState<string>('');
   const [showMoveFinancieraModal, setShowMoveFinancieraModal] = useState(false);
   const [targetMoveFinancieraId, setTargetMoveFinancieraId] = useState<string>('');
+  const [showMoveSupervisorModal, setShowMoveSupervisorModal] = useState(false);
+  const [targetMoveSupervisorId, setTargetMoveSupervisorId] = useState<string>('');
   const [showMergeDuplicatesModal, setShowMergeDuplicatesModal] = useState(false);
   const [isMergingDuplicates, setIsMergingDuplicates] = useState(false);
 
@@ -840,16 +847,61 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setEditClientAddress(client.address || '');
       setEditClientPhone(client.cellphone || '');
       setEditClientCredit(client.creditAmount || 0);
+      setEditClientSupervisorId(client.supervisorId || '');
       setEditClientAvalName(client.avalName || '');
       setEditClientAvalAddress(client.avalAddress || '');
       setEditClientAvalPhone(client.avalCellphone || '');
       setEditClientGuarantees(client.guarantees || []);
+      const primaryAvalGuarantees = client.avales?.[0]?.guarantees || [];
+      setEditClientAvalGuarantees(primaryAvalGuarantees.map((g: any) => typeof g === 'string' ? { description: g } : g));
+      setNewGuaranteeDesc('');
+      setNewAvalGuaranteeDesc('');
       setIsEditingClient(true);
   };
 
-  const handleSaveClient = () => {
+  const handleSaveClient = async () => {
       if (!selectedClientForDetails) return;
-      onUpdateClient(selectedClientForDetails.id, {
+      const targetSup = fullSupervisorsList.find(s => s.id === editClientSupervisorId);
+      const isChangingSup = !!editClientSupervisorId && editClientSupervisorId !== selectedClientForDetails.supervisorId;
+
+      if (isChangingSup && onMoveClientsToSupervisor) {
+          await onMoveClientsToSupervisor([selectedClientForDetails.id], editClientSupervisorId);
+      }
+
+      const finalClientGuarantees = [...editClientGuarantees];
+      if (newGuaranteeDesc.trim() && !finalClientGuarantees.some(g => g.description.toUpperCase() === newGuaranteeDesc.trim().toUpperCase())) {
+          finalClientGuarantees.push({ description: newGuaranteeDesc.trim().toUpperCase() });
+      }
+
+      const finalAvalGuarantees = [...editClientAvalGuarantees];
+      if (newAvalGuaranteeDesc.trim() && !finalAvalGuarantees.some(g => g.description.toUpperCase() === newAvalGuaranteeDesc.trim().toUpperCase())) {
+          finalAvalGuarantees.push({ description: newAvalGuaranteeDesc.trim().toUpperCase() });
+      }
+
+      const updatedAvales = [...(selectedClientForDetails.avales || [])];
+      if (updatedAvales.length === 0) {
+          updatedAvales.push({
+              name: editClientAvalName,
+              address: editClientAvalAddress,
+              cellphone: editClientAvalPhone,
+              facadeUrl: selectedClientForDetails.avalFacadeUrl,
+              photoUrl: selectedClientForDetails.avalPhotoUrl,
+              latitude: selectedClientForDetails.avalLatitude,
+              longitude: selectedClientForDetails.avalLongitude,
+              visitTimestamp: selectedClientForDetails.avalVisitTimestamp,
+              guarantees: finalAvalGuarantees
+          });
+      } else {
+          updatedAvales[0] = {
+              ...updatedAvales[0],
+              name: editClientAvalName,
+              address: editClientAvalAddress,
+              cellphone: editClientAvalPhone,
+              guarantees: finalAvalGuarantees
+          };
+      }
+
+      const updatedFields: Partial<Client> = {
           name: editClientName,
           address: editClientAddress,
           cellphone: editClientPhone,
@@ -857,18 +909,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
           avalName: editClientAvalName,
           avalAddress: editClientAvalAddress,
           avalCellphone: editClientAvalPhone,
-          guarantees: editClientGuarantees
-      });
+          avales: updatedAvales,
+          guarantees: finalClientGuarantees,
+          ...(isChangingSup ? {
+              supervisorId: editClientSupervisorId,
+              registeredBySupervisorId: selectedClientForDetails.registeredBySupervisorId || selectedClientForDetails.supervisorId,
+              ...(targetSup?.financieraId ? { financieraId: targetSup.financieraId } : {})
+          } : {})
+      };
+
+      onUpdateClient(selectedClientForDetails.id, updatedFields);
       setSelectedClientForDetails({
           ...selectedClientForDetails,
-          name: editClientName,
-          address: editClientAddress,
-          cellphone: editClientPhone,
-          creditAmount: editClientCredit,
-          avalName: editClientAvalName,
-          avalAddress: editClientAvalAddress,
-          avalCellphone: editClientAvalPhone,
-          guarantees: editClientGuarantees
+          ...updatedFields
       });
       setIsEditingClient(false);
       alert("Cliente actualizado correctamente.");
@@ -1004,6 +1057,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const removeGuarantee = (index: number) => {
       setEditClientGuarantees(editClientGuarantees.filter((_, i) => i !== index));
+  };
+
+  const handleAddAvalGuarantee = () => {
+      if (!newAvalGuaranteeDesc.trim()) return;
+      setEditClientAvalGuarantees([...editClientAvalGuarantees, { description: newAvalGuaranteeDesc.toUpperCase() }]);
+      setNewAvalGuaranteeDesc('');
+  };
+
+  const removeAvalGuarantee = (index: number) => {
+      setEditClientAvalGuarantees(editClientAvalGuarantees.filter((_, i) => i !== index));
   };
 
   const handleManualWeekSubmit = (e: React.FormEvent) => {
@@ -2235,21 +2298,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                         )}
                     </div>
                     {selectedClientIds.size > 0 && (
-                        <div className="bg-indigo-50 p-4 rounded-xl flex justify-between items-center flex-1 w-full border border-indigo-100">
+                        <div className="bg-indigo-50 p-4 rounded-xl flex flex-wrap justify-between items-center flex-1 w-full border border-indigo-100 gap-3">
                             <span className="text-sm font-bold text-indigo-900">{selectedClientIds.size} seleccionados</span>
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
+                                {(isSuperAdmin || isViewer) && (
+                                    <button 
+                                        onClick={() => setShowMoveSupervisorModal(true)}
+                                        className="bg-emerald-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md hover:bg-emerald-700 transition-colors flex items-center gap-1.5"
+                                    >
+                                        <UserCog className="w-3.5 h-3.5" /> Cambiar Supervisora
+                                    </button>
+                                )}
                                 <button 
                                     onClick={() => setShowMoveWeekModal(true)}
-                                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md hover:bg-indigo-700 transition-colors"
+                                    className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md hover:bg-indigo-700 transition-colors flex items-center gap-1.5"
                                 >
-                                    Cambiar Fecha
+                                    <Calendar className="w-3.5 h-3.5" /> Cambiar Fecha
                                 </button>
                                 {isSuperAdmin && (
                                     <button 
                                         onClick={() => setShowMoveFinancieraModal(true)}
-                                        className="bg-amber-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md hover:bg-amber-700 transition-colors"
+                                        className="bg-amber-600 text-white px-4 py-2 rounded-lg text-[10px] font-black uppercase shadow-md hover:bg-amber-700 transition-colors flex items-center gap-1.5"
                                     >
-                                        Financiera
+                                        <Building2 className="w-3.5 h-3.5" /> Financiera
                                     </button>
                                 )}
                             </div>
@@ -2277,7 +2348,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 <th className="py-4 px-4 w-12 text-center">#</th>
                                 <th className="py-4 px-4">Cliente</th>
                                 <th className="py-4 px-4">Financiera</th>
-                                <th className="py-4 px-4">Registró</th>
+                                <th className="py-4 px-4">Supervisora</th>
                                 <th className="py-4 px-4 text-center">Crédito</th>
                                 <th className="py-4 px-4 text-center">Última Visita</th>
                                 <th className="py-4 px-4 text-center">Aval Verif.</th>
@@ -2291,8 +2362,11 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                 const financiera = data.financieras.find(f => f.id === client.financieraId);
                                 const completion = checkClientCompleteness(client, financiera);
                                 
-                                const regSupervisor = data.supervisors.find(s => s.id === client.registeredBySupervisorId || s.id === client.supervisorId);
-                                const supervisorFirstName = regSupervisor ? regSupervisor.name.split(' ')[0].toUpperCase() : 'SIN ASIGNAR';
+                                const currentSupervisor = data.supervisors.find(s => s.id === client.supervisorId);
+                                const currentSupervisorName = currentSupervisor ? currentSupervisor.name.split(' ')[0].toUpperCase() : 'SIN ASIGNAR';
+                                const regSupervisor = (client.registeredBySupervisorId && client.registeredBySupervisorId !== client.supervisorId)
+                                    ? data.supervisors.find(s => s.id === client.registeredBySupervisorId)
+                                    : null;
                                 
                                 // Calcular la última visita real
                                 const clientVisits = data.visits.filter(v => v.clientId === client.id);
@@ -2344,7 +2418,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                             {data.financieras.find(f => f.id === client.financieraId)?.name || 'SIN ASIGNAR'}
                                         </td>
                                         <td className="py-4 px-4 font-black text-slate-600 text-[10px] uppercase">
-                                            {supervisorFirstName}
+                                            <div className="text-slate-800 font-black">{currentSupervisorName}</div>
+                                            {regSupervisor && (
+                                                <div className="text-[8px] font-bold text-slate-400 lowercase">
+                                                    reg: {regSupervisor.name.split(' ')[0].toLowerCase()}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="py-4 px-4 text-center font-black text-indigo-600">${client.creditAmount || 0}</td>
                                         
@@ -2435,6 +2514,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                 <button onClick={() => setSelectedClientForDetails(client)} className="p-2 text-indigo-600 bg-indigo-50 rounded-full hover:bg-indigo-100 transition-colors shadow-sm" title="Ver Detalle"><Eye className="w-4 h-4"/></button>
                                                 {(isSuperAdmin || isViewer) && (
                                                     <button onClick={() => { setSelectedClientForDetails(client); startEditClient(client); }} className="p-2 text-amber-600 bg-amber-50 rounded-full hover:bg-amber-100 transition-colors shadow-sm" title="Editar Cliente"><Pencil className="w-4 h-4"/></button>
+                                                )}
+                                                {(isSuperAdmin || isViewer) && (
+                                                    <button 
+                                                        onClick={() => { 
+                                                            setSelectedClientIds(new Set([client.id])); 
+                                                            setTargetMoveSupervisorId(client.supervisorId || '');
+                                                            setShowMoveSupervisorModal(true); 
+                                                        }} 
+                                                        className="p-2 text-emerald-600 bg-emerald-50 rounded-full hover:bg-emerald-100 transition-colors shadow-sm" 
+                                                        title="Cambiar Supervisora"
+                                                    >
+                                                        <UserCog className="w-4 h-4"/>
+                                                    </button>
                                                 )}
                                                 {(isSuperAdmin || isViewer) && (
                                                     client.isManuallyApproved ? (
@@ -4405,6 +4497,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                             <input type="number" value={editClientCredit} onChange={e => setEditClientCredit(parseFloat(e.target.value))} className="w-full p-3 border border-slate-200 rounded-xl font-bold text-indigo-600 bg-white focus:ring-2 focus:ring-indigo-500 outline-none text-xs" />
                                         </div>
                                     </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">Supervisora Asignada</label>
+                                        <select 
+                                            value={editClientSupervisorId} 
+                                            onChange={e => setEditClientSupervisorId(e.target.value)} 
+                                            className="w-full p-3 border border-slate-200 rounded-xl font-bold text-slate-900 bg-white focus:ring-2 focus:ring-indigo-500 outline-none uppercase text-xs cursor-pointer"
+                                        >
+                                            {fullSupervisorsList.map(s => {
+                                                const fin = data.financieras.find(f => f.id === s.financieraId);
+                                                return (
+                                                    <option key={s.id} value={s.id}>
+                                                        {s.name} ({fin?.name || 'SIN FINANCIERA'})
+                                                    </option>
+                                                );
+                                            })}
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
 
@@ -4428,33 +4537,65 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                             </div>
                         </div>
 
-                        {/* EDICIÓN GARANTÍAS */}
-                        <div className="space-y-4 bg-slate-50 p-6 rounded-3xl border border-slate-100">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-emerald-500 pl-3 flex items-center gap-2">
-                                Inventario de Garantías ({editClientGuarantees.length})
-                            </h4>
-                            <div className="flex gap-2">
-                                <input 
-                                    type="text" 
-                                    value={newGuaranteeDesc} 
-                                    onChange={e => setNewGuaranteeDesc(e.target.value.toUpperCase())} 
-                                    onKeyDown={(e) => e.key === 'Enter' && handleAddGuarantee()}
-                                    className="flex-1 p-3 border border-slate-200 rounded-xl font-bold text-slate-900 bg-white focus:ring-2 focus:ring-emerald-500 outline-none uppercase text-xs" 
-                                    placeholder="NUEVA GARANTÍA..." 
-                                />
-                                <button onClick={handleAddGuarantee} className="bg-emerald-600 text-white px-4 rounded-xl hover:bg-emerald-700 transition-colors"><Plus className="w-5 h-5"/></button>
-                            </div>
-                            <div className="space-y-2">
-                                {editClientGuarantees.length === 0 && <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-4 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">Sin garantías</p>}
-                                {editClientGuarantees.map((g, i) => (
-                                    <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
-                                        <div className="flex items-center gap-3 overflow-hidden">
-                                            <div className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></div>
-                                            <span className="text-xs font-black text-slate-700 uppercase truncate">{g.description}</span>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                            {/* EDICIÓN GARANTÍAS SOLICITANTE */}
+                            <div className="space-y-4 bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-emerald-500 pl-3 flex items-center gap-2">
+                                    Garantías del Solicitante ({editClientGuarantees.length})
+                                </h4>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={newGuaranteeDesc} 
+                                        onChange={e => setNewGuaranteeDesc(e.target.value.toUpperCase())} 
+                                        onKeyDown={(e) => e.key === 'Enter' && handleAddGuarantee()}
+                                        className="flex-1 p-3 border border-slate-200 rounded-xl font-bold text-slate-900 bg-white focus:ring-2 focus:ring-emerald-500 outline-none uppercase text-xs" 
+                                        placeholder="NUEVA GARANTÍA..." 
+                                    />
+                                    <button type="button" onClick={handleAddGuarantee} className="bg-emerald-600 text-white px-4 rounded-xl hover:bg-emerald-700 transition-colors"><Plus className="w-5 h-5"/></button>
+                                </div>
+                                <div className="space-y-2">
+                                    {editClientGuarantees.length === 0 && <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-4 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">Sin garantías del solicitante</p>}
+                                    {editClientGuarantees.map((g, i) => (
+                                        <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                <div className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></div>
+                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{g.description}</span>
+                                            </div>
+                                            <button type="button" onClick={() => removeGuarantee(i)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4" /></button>
                                         </div>
-                                        <button onClick={() => removeGuarantee(i)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4" /></button>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* EDICIÓN GARANTÍAS AVAL */}
+                            <div className="space-y-4 bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-3 flex items-center gap-2">
+                                    Garantías del Aval ({editClientAvalGuarantees.length})
+                                </h4>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={newAvalGuaranteeDesc} 
+                                        onChange={e => setNewAvalGuaranteeDesc(e.target.value.toUpperCase())} 
+                                        onKeyDown={(e) => e.key === 'Enter' && handleAddAvalGuarantee()}
+                                        className="flex-1 p-3 border border-slate-200 rounded-xl font-bold text-slate-900 bg-white focus:ring-2 focus:ring-blue-500 outline-none uppercase text-xs" 
+                                        placeholder="NUEVA GARANTÍA DE AVAL..." 
+                                    />
+                                    <button type="button" onClick={handleAddAvalGuarantee} className="bg-blue-600 text-white px-4 rounded-xl hover:bg-blue-700 transition-colors"><Plus className="w-5 h-5"/></button>
+                                </div>
+                                <div className="space-y-2">
+                                    {editClientAvalGuarantees.length === 0 && <p className="text-center text-[10px] text-slate-400 font-bold uppercase py-4 opacity-50 border-2 border-dashed border-slate-200 rounded-xl">Sin garantías del aval</p>}
+                                    {editClientAvalGuarantees.map((g, i) => (
+                                        <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
+                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
+                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{g.description}</span>
+                                            </div>
+                                            <button type="button" onClick={() => removeAvalGuarantee(i)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4" /></button>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
@@ -4551,25 +4692,75 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                     <div><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Celular</p><p className="text-sm font-bold text-slate-800">{selectedClientForDetails.cellphone}</p></div>
                                     <div><p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Línea de Crédito</p><p className="text-sm font-black text-indigo-600">${selectedClientForDetails.creditAmount} MXN</p></div>
                                 </div>
-                                <div className="pt-2 border-t border-slate-200 space-y-2">
-                                    <div>
-                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Registrado por</p>
-                                        <p className="text-sm font-bold uppercase text-slate-800 flex items-center gap-2">
-                                            <UserCheck className="w-4 h-4 text-emerald-500" />
-                                            {fullSupervisorsList.find(s => s.id === selectedClientForDetails.registeredBySupervisorId)?.name || 
-                                             fullSupervisorsList.find(s => s.id === selectedClientForDetails.supervisorId)?.name || 'SUPERVISOR DESCONOCIDO'}
-                                        </p>
-                                    </div>
-                                    {selectedClientForDetails.registeredBySupervisorId && selectedClientForDetails.registeredBySupervisorId !== selectedClientForDetails.supervisorId && (
-                                        <div>
-                                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Asignado actualmente a</p>
-                                            <p className="text-sm font-bold uppercase text-slate-800 flex items-center gap-2">
-                                                <UserCog className="w-4 h-4 text-indigo-500" />
-                                                {fullSupervisorsList.find(s => s.id === selectedClientForDetails.supervisorId)?.name || 'SUPERVISOR DESCONOCIDO'}
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
+                                 <div className="pt-2 border-t border-slate-200 space-y-3">
+                                     <div>
+                                         <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Registrado por</p>
+                                         <p className="text-sm font-bold uppercase text-slate-800 flex items-center gap-2">
+                                             <UserCheck className="w-4 h-4 text-emerald-500" />
+                                             {fullSupervisorsList.find(s => s.id === selectedClientForDetails.registeredBySupervisorId)?.name || 
+                                              fullSupervisorsList.find(s => s.id === selectedClientForDetails.supervisorId)?.name || 'SUPERVISOR DESCONOCIDO'}
+                                         </p>
+                                     </div>
+                                     <div className="space-y-1">
+                                         <div className="flex items-center justify-between">
+                                             <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">
+                                                 {selectedClientForDetails.registeredBySupervisorId && selectedClientForDetails.registeredBySupervisorId !== selectedClientForDetails.supervisorId
+                                                     ? 'Asignado actualmente a'
+                                                     : 'Supervisora Asignada'}
+                                             </p>
+                                             {(isSuperAdmin || isViewer) && (
+                                                 <span className="text-[8px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full uppercase border border-indigo-100 flex items-center gap-1">
+                                                     <UserCog className="w-2.5 h-2.5" /> Reasignar
+                                                 </span>
+                                             )}
+                                         </div>
+                                         {(isSuperAdmin || isViewer) ? (
+                                             <div className="flex items-center gap-2">
+                                                 <select
+                                                     value={selectedClientForDetails.supervisorId}
+                                                     onChange={async (e) => {
+                                                         const newSupId = e.target.value;
+                                                         if (!newSupId || newSupId === selectedClientForDetails.supervisorId) return;
+                                                         const targetSup = fullSupervisorsList.find(s => s.id === newSupId);
+                                                         const confirmMsg = `¿Reasignar este cliente a "${targetSup?.name || newSupId}"?\nEl cliente aparecerá inmediatamente en el panel de esta supervisora.`;
+                                                         if (confirm(confirmMsg)) {
+                                                             if (onMoveClientsToSupervisor) {
+                                                                 await onMoveClientsToSupervisor([selectedClientForDetails.id], newSupId);
+                                                             } else {
+                                                                 await onUpdateClient(selectedClientForDetails.id, { 
+                                                                     supervisorId: newSupId,
+                                                                     registeredBySupervisorId: selectedClientForDetails.registeredBySupervisorId || selectedClientForDetails.supervisorId,
+                                                                     ...(targetSup?.financieraId ? { financieraId: targetSup.financieraId } : {})
+                                                                 });
+                                                             }
+                                                             setSelectedClientForDetails(prev => prev ? ({
+                                                                 ...prev,
+                                                                 supervisorId: newSupId,
+                                                                 registeredBySupervisorId: prev.registeredBySupervisorId || prev.supervisorId,
+                                                                 ...(targetSup?.financieraId ? { financieraId: targetSup.financieraId } : {})
+                                                             }) : null);
+                                                         }
+                                                     }}
+                                                     className="w-full p-2.5 bg-indigo-50/50 hover:bg-indigo-50 border-2 border-indigo-200 hover:border-indigo-400 rounded-xl text-xs font-black uppercase text-indigo-900 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer transition-all shadow-xs"
+                                                 >
+                                                     {fullSupervisorsList.map(s => {
+                                                         const fin = data.financieras.find(f => f.id === s.financieraId);
+                                                         return (
+                                                             <option key={s.id} value={s.id}>
+                                                                 {s.name} ({fin?.name || 'SIN FINANCIERA'})
+                                                             </option>
+                                                         );
+                                                     })}
+                                                 </select>
+                                             </div>
+                                         ) : (
+                                             <p className="text-sm font-bold uppercase text-slate-800 flex items-center gap-2">
+                                                 <UserCog className="w-4 h-4 text-indigo-500" />
+                                                 {fullSupervisorsList.find(s => s.id === selectedClientForDetails.supervisorId)?.name || 'SUPERVISOR DESCONOCIDO'}
+                                             </p>
+                                         )}
+                                     </div>
+                                 </div>
                             </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                     <div className="space-y-3">
@@ -4641,7 +4832,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                         <div className="flex flex-wrap gap-2">
                                                             {aval.guarantees.map((g, gi) => (
                                                                 <span key={gi} className="px-2 py-1 bg-white border border-blue-100 text-[9px] font-bold text-blue-800 rounded-lg uppercase">
-                                                                    {g.description}
+                                                                    {typeof g === 'string' ? g : (g?.description || '')}
                                                                 </span>
                                                             ))}
                                                         </div>
@@ -4875,6 +5066,83 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                   }
                               }}
                               className="flex-1 py-4 bg-amber-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-amber-700 transition-colors shadow-lg shadow-amber-100"
+                          >
+                              Confirmar Cambio
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* MODAL MOVER SUPERVISORA */}
+      {showMoveSupervisorModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-white rounded-[2.5rem] w-full max-w-md shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="p-8 space-y-6">
+                      <div className="flex items-center justify-between">
+                          <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight flex items-center gap-3">
+                              <UserCog className="w-6 h-6 text-emerald-600" />
+                              Cambiar Supervisora
+                          </h3>
+                          <button onClick={() => { setShowMoveSupervisorModal(false); setTargetMoveSupervisorId(''); }} className="p-2 bg-slate-100 text-slate-400 rounded-full hover:bg-slate-200 hover:text-slate-600 transition-colors">
+                              <X className="w-5 h-5" />
+                          </button>
+                      </div>
+                      <div className="space-y-4">
+                          <p className="text-sm font-medium text-slate-600">
+                              Selecciona la supervisora a la que deseas reasignar los <span className="font-black text-emerald-600">{selectedClientIds.size}</span> cliente(s) seleccionado(s).
+                          </p>
+                          <div className="space-y-2">
+                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Supervisora Destino</label>
+                              <select
+                                  value={targetMoveSupervisorId}
+                                  onChange={(e) => setTargetMoveSupervisorId(e.target.value)}
+                                  className="w-full p-4 border-2 border-slate-100 rounded-2xl font-bold text-slate-700 bg-slate-50 focus:ring-4 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none cursor-pointer transition-all uppercase text-xs"
+                              >
+                                  <option value="">-- SELECCIONAR SUPERVISORA --</option>
+                                  {fullSupervisorsList.map(s => {
+                                      const fin = data.financieras.find(f => f.id === s.financieraId);
+                                      return (
+                                          <option key={s.id} value={s.id} className="font-medium text-slate-900">
+                                              {s.name} ({fin?.name || 'SIN FINANCIERA'})
+                                          </option>
+                                      );
+                                  })}
+                              </select>
+                          </div>
+                      </div>
+                      <div className="pt-4 flex gap-3">
+                          <button onClick={() => { setShowMoveSupervisorModal(false); setTargetMoveSupervisorId(''); }} className="flex-1 py-4 bg-slate-100 text-slate-600 rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-slate-200 transition-colors">
+                              Cancelar
+                          </button>
+                          <button
+                              onClick={async () => {
+                                  if (targetMoveSupervisorId) {
+                                      const targetSup = fullSupervisorsList.find(s => s.id === targetMoveSupervisorId);
+                                      const confirmMsg = `¿Reasignar ${selectedClientIds.size} cliente(s) a "${targetSup?.name || targetMoveSupervisorId}"?\nAparecerán inmediatamente en el panel de esta supervisora.`;
+                                      if (confirm(confirmMsg)) {
+                                          if (onMoveClientsToSupervisor) {
+                                              await onMoveClientsToSupervisor(Array.from(selectedClientIds), targetMoveSupervisorId);
+                                          }
+                                          if (selectedClientForDetails && selectedClientIds.has(selectedClientForDetails.id)) {
+                                              setSelectedClientForDetails(prev => prev ? ({
+                                                  ...prev,
+                                                  supervisorId: targetMoveSupervisorId,
+                                                  registeredBySupervisorId: prev.registeredBySupervisorId || prev.supervisorId,
+                                                  ...(targetSup?.financieraId ? { financieraId: targetSup.financieraId } : {})
+                                              }) : null);
+                                          }
+                                          setShowMoveSupervisorModal(false);
+                                          setSelectedClientIds(new Set());
+                                          setTargetMoveSupervisorId('');
+                                      }
+                                  } else {
+                                      alert('Por favor selecciona una supervisora.');
+                                  }
+                              }}
+                              disabled={!targetMoveSupervisorId}
+                              className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-100 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
                               Confirmar Cambio
                           </button>

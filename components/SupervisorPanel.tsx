@@ -757,7 +757,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 setAvalPhotoPreview(null);
             } else {
                 // Fallback for primary aval if using legacy fields (usually index 0)
-                setAvalGuarantees(targetAvalClient.guarantees?.filter(g => g.description).map(g => ({ description: g.description })) || []);
+                setAvalGuarantees([]);
                 setAvalFacadePreview(targetAvalClient.avalFacadeUrl || null);
                 setAvalPhotoPreview(targetAvalClient.avalPhotoUrl || null);
             }
@@ -1042,6 +1042,23 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             const finalAval3FacadeUrl = aval3FacadeUrl || resolvedAval3.facadeUrl || '';
             const finalAval3PhotoUrl = aval3PhotoUrl || resolvedAval3.photoUrl || '';
 
+            const finalAval1Guarantees = [...aval1Guarantees];
+            if (newAval1Guarantee.trim() && !finalAval1Guarantees.some(g => g.toUpperCase() === newAval1Guarantee.trim().toUpperCase())) {
+                finalAval1Guarantees.push(newAval1Guarantee.trim().toUpperCase());
+            }
+            const finalAval2Guarantees = [...aval2Guarantees];
+            if (newAval2Guarantee.trim() && !finalAval2Guarantees.some(g => g.toUpperCase() === newAval2Guarantee.trim().toUpperCase())) {
+                finalAval2Guarantees.push(newAval2Guarantee.trim().toUpperCase());
+            }
+            const finalAval3Guarantees = [...aval3Guarantees];
+            if (newAval3Guarantee.trim() && !finalAval3Guarantees.some(g => g.toUpperCase() === newAval3Guarantee.trim().toUpperCase())) {
+                finalAval3Guarantees.push(newAval3Guarantee.trim().toUpperCase());
+            }
+            const finalClientGuarantees = [...guarantees];
+            if (newGuarantee.trim() && !finalClientGuarantees.some(g => g.toUpperCase() === newGuarantee.trim().toUpperCase())) {
+                finalClientGuarantees.push(newGuarantee.trim().toUpperCase());
+            }
+
             const currentAvales: Guarantor[] = [
                 {
                     name: avalName.toUpperCase(),
@@ -1049,7 +1066,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     cellphone: avalCellphone,
                     facadeUrl: finalAval1FacadeUrl,
                     photoUrl: finalAval1PhotoUrl,
-                    guarantees: aval1Guarantees.map(g => ({ description: g.toUpperCase() }))
+                    guarantees: finalAval1Guarantees.map(g => ({ description: g.toUpperCase() }))
                 }
             ];
             if (requiredAvales >= 2) {
@@ -1059,7 +1076,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     cellphone: aval2Cellphone,
                     facadeUrl: finalAval2FacadeUrl,
                     photoUrl: finalAval2PhotoUrl,
-                    guarantees: aval2Guarantees.map(g => ({ description: g.toUpperCase() }))
+                    guarantees: finalAval2Guarantees.map(g => ({ description: g.toUpperCase() }))
                 });
             }
             if (requiredAvales >= 3) {
@@ -1069,7 +1086,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     cellphone: aval3Cellphone,
                     facadeUrl: finalAval3FacadeUrl,
                     photoUrl: finalAval3PhotoUrl,
-                    guarantees: aval3Guarantees.map(g => ({ description: g.toUpperCase() }))
+                    guarantees: finalAval3Guarantees.map(g => ({ description: g.toUpperCase() }))
                 });
             }
 
@@ -1080,7 +1097,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 cellphone: cellphone,
                 facadeUrl: facadeUrl,
                 clientPhotoUrl: clientPhotoUrl,
-                guarantees: guarantees.map(g => ({ description: g.toUpperCase() })),
+                guarantees: finalClientGuarantees.map(g => ({ description: g.toUpperCase() })),
                 avalName: avalName.toUpperCase(),
                 avalAddress: avalAddress.toUpperCase(),
                 avalCellphone,
@@ -1125,10 +1142,15 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         }
         */
 
+        const finalAvalGuarantees = [...avalGuarantees];
+        if (newAvalGuarantee.trim() && !finalAvalGuarantees.some(g => g.description.toUpperCase() === newAvalGuarantee.trim().toUpperCase())) {
+            finalAvalGuarantees.push({ description: newAvalGuarantee.trim().toUpperCase() });
+        }
+
         // Check for minimum guarantees if required
         const fin = supervisorFinanciera;
         const minG = fin?.minGuaranteesForAval || 0;
-        if (fin?.requireGuaranteesForAval && avalGuarantees.length < minG) {
+        if (fin?.requireGuaranteesForAval && finalAvalGuarantees.length < minG) {
             alert(`Se requieren al menos ${minG} garantías para el aval.`);
             return;
         }
@@ -1156,7 +1178,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             const isAvalComplete =
                 (!requireGuarantorFacade || !!facadeUrl || !!targetAvalClient.avales?.[selectedAvalIndex]?.facadeUrl || !!targetAvalClient.avalFacadeUrl);
 
-            await onUpdateAvalVisit(targetAvalClient.id, facadeUrl, loc.lat, loc.lng, selectedAvalIndex, avalGuarantees, guarantorPhotoUrl, isAvalComplete);
+            await onUpdateAvalVisit(targetAvalClient.id, facadeUrl, loc.lat, loc.lng, selectedAvalIndex, finalAvalGuarantees, guarantorPhotoUrl, isAvalComplete);
 
             if (!isAvalComplete) {
                 alert("Visita de aval guardada parcialmente (PENDIENTE). Faltan fotos obligatorias.");
@@ -1236,34 +1258,60 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 }
             }
 
+            const finalAval1Guarantees = [...aval1Guarantees];
+            if (newAval1Guarantee.trim() && !finalAval1Guarantees.some(g => g.toUpperCase() === newAval1Guarantee.trim().toUpperCase())) {
+                finalAval1Guarantees.push(newAval1Guarantee.trim().toUpperCase());
+            }
+            const finalAval2Guarantees = [...aval2Guarantees];
+            if (newAval2Guarantee.trim() && !finalAval2Guarantees.some(g => g.toUpperCase() === newAval2Guarantee.trim().toUpperCase())) {
+                finalAval2Guarantees.push(newAval2Guarantee.trim().toUpperCase());
+            }
+            const finalAval3Guarantees = [...aval3Guarantees];
+            if (newAval3Guarantee.trim() && !finalAval3Guarantees.some(g => g.toUpperCase() === newAval3Guarantee.trim().toUpperCase())) {
+                finalAval3Guarantees.push(newAval3Guarantee.trim().toUpperCase());
+            }
+            const finalClientGuarantees = [...guarantees];
+            if (newGuarantee.trim() && !finalClientGuarantees.some(g => g.toUpperCase() === newGuarantee.trim().toUpperCase())) {
+                finalClientGuarantees.push(newGuarantee.trim().toUpperCase());
+            }
+
             const currentAvales: Guarantor[] = [
                 {
                     name: avalName.toUpperCase(),
                     address: avalAddress.toUpperCase(),
                     cellphone: avalCellphone,
-                    facadeUrl: aval1IsClient ? (aval1SelectedClient?.facadeUrl || '') : avalFacadeUrl,
-                    photoUrl: aval1IsClient ? (aval1SelectedClient?.clientPhotoUrl || '') : avalPhotoUrl,
-                    guarantees: aval1Guarantees.map(g => ({ description: g.toUpperCase() }))
+                    facadeUrl: aval1IsClient ? (aval1SelectedClient?.facadeUrl || '') : (avalFacadeUrl || editingClient.avales?.[0]?.facadeUrl || editingClient.avalFacadeUrl || ''),
+                    photoUrl: aval1IsClient ? (aval1SelectedClient?.clientPhotoUrl || '') : (avalPhotoUrl || editingClient.avales?.[0]?.photoUrl || editingClient.avalPhotoUrl || ''),
+                    latitude: editingClient.avales?.[0]?.latitude || editingClient.avalLatitude,
+                    longitude: editingClient.avales?.[0]?.longitude || editingClient.avalLongitude,
+                    visitTimestamp: editingClient.avales?.[0]?.visitTimestamp || editingClient.avalVisitTimestamp,
+                    guarantees: finalAval1Guarantees.map(g => ({ description: g.toUpperCase() }))
                 }
             ];
-            if (requiredAvales >= 2) {
+            if (requiredAvales >= 2 || (editingClient.avales && editingClient.avales.length > 1 && aval2Name)) {
                 currentAvales.push({
                     name: aval2Name.toUpperCase(),
                     address: aval2Address.toUpperCase(),
                     cellphone: aval2Cellphone,
-                    facadeUrl: aval2IsClient ? (aval2SelectedClient?.facadeUrl || '') : aval2FacadeUrl,
-                    photoUrl: aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : aval2PhotoUrl,
-                    guarantees: aval2Guarantees.map(g => ({ description: g.toUpperCase() }))
+                    facadeUrl: aval2IsClient ? (aval2SelectedClient?.facadeUrl || '') : (aval2FacadeUrl || editingClient.avales?.[1]?.facadeUrl || ''),
+                    photoUrl: aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : (aval2PhotoUrl || editingClient.avales?.[1]?.photoUrl || ''),
+                    latitude: editingClient.avales?.[1]?.latitude,
+                    longitude: editingClient.avales?.[1]?.longitude,
+                    visitTimestamp: editingClient.avales?.[1]?.visitTimestamp,
+                    guarantees: finalAval2Guarantees.map(g => ({ description: g.toUpperCase() }))
                 });
             }
-            if (requiredAvales >= 3) {
+            if (requiredAvales >= 3 || (editingClient.avales && editingClient.avales.length > 2 && aval3Name)) {
                 currentAvales.push({
                     name: aval3Name.toUpperCase(),
                     address: aval3Address.toUpperCase(),
                     cellphone: aval3Cellphone,
-                    facadeUrl: aval3FacadeUrl,
-                    photoUrl: aval3PhotoUrl,
-                    guarantees: aval3Guarantees.map(g => ({ description: g.toUpperCase() }))
+                    facadeUrl: aval3FacadeUrl || editingClient.avales?.[2]?.facadeUrl || '',
+                    photoUrl: aval3PhotoUrl || editingClient.avales?.[2]?.photoUrl || '',
+                    latitude: editingClient.avales?.[2]?.latitude,
+                    longitude: editingClient.avales?.[2]?.longitude,
+                    visitTimestamp: editingClient.avales?.[2]?.visitTimestamp,
+                    guarantees: finalAval3Guarantees.map(g => ({ description: g.toUpperCase() }))
                 });
             }
 
@@ -1276,7 +1324,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 avalAddress: avalAddress.toUpperCase(),
                 avalCellphone: avalCellphone,
                 avales: currentAvales,
-                guarantees: guarantees.map(g => ({ description: g.toUpperCase() })),
+                guarantees: finalClientGuarantees.map(g => ({ description: g.toUpperCase() })),
                 comments: clientComments.toUpperCase(),
                 facadeUrl,
                 clientPhotoUrl,
@@ -1657,16 +1705,27 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             setAvalName(client.avales[0].name);
             setAvalAddress(client.avales[0].address || '');
             setAvalCellphone(client.avales[0].cellphone || '');
+            setAval1Guarantees(client.avales[0].guarantees ? client.avales[0].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')).filter(Boolean) : []);
             if (client.avales.length > 1) {
                 setAval2Name(client.avales[1].name);
                 setAval2Address(client.avales[1].address || '');
                 setAval2Cellphone(client.avales[1].cellphone || '');
+                setAval2Guarantees(client.avales[1].guarantees ? client.avales[1].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')).filter(Boolean) : []);
+            } else {
+                setAval2Name(''); setAval2Address(''); setAval2Cellphone(''); setAval2Guarantees([]);
             }
             if (client.avales.length > 2) {
                 setAval3Name(client.avales[2].name);
                 setAval3Address(client.avales[2].address || '');
                 setAval3Cellphone(client.avales[2].cellphone || '');
+                setAval3Guarantees(client.avales[2].guarantees ? client.avales[2].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')).filter(Boolean) : []);
+            } else {
+                setAval3Name(''); setAval3Address(''); setAval3Cellphone(''); setAval3Guarantees([]);
             }
+        } else {
+            setAval1Guarantees([]);
+            setAval2Name(''); setAval2Address(''); setAval2Cellphone(''); setAval2Guarantees([]);
+            setAval3Name(''); setAval3Address(''); setAval3Cellphone(''); setAval3Guarantees([]);
         }
 
         setGuarantees([]);
@@ -1778,25 +1837,63 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     )}
                 </div>
 
-                {/* AVAL DETAILS ROW */}
-                <div className="bg-blue-50/30 border border-blue-100/50 p-3 rounded-xl flex items-center justify-between text-[10px]">
-                    <div className="flex flex-col min-w-0 pr-2">
-                        <span className="text-[7.5px] text-blue-500 font-black uppercase tracking-wider">Aval</span>
-                        <span className="font-bold text-slate-700 uppercase truncate">{client.avalName || 'Sin Aval'}</span>
+                {/* AVAL DETAILS ROW & SUPERVISION BUTTONS */}
+                <div className="space-y-2">
+                    <div className="bg-blue-50/30 border border-blue-100/50 p-3 rounded-xl flex items-center justify-between text-[10px]">
+                        <div className="flex flex-col min-w-0 pr-2">
+                            <span className="text-[7.5px] text-blue-500 font-black uppercase tracking-wider">Aval Principal</span>
+                            <span className="font-bold text-slate-700 uppercase truncate">{client.avalName || 'Sin Aval'}</span>
+                        </div>
+                        {client.avalCellphone ? (
+                            <a 
+                                href={`tel:${client.avalCellphone}`}
+                                onClick={(e) => e.stopPropagation()}
+                                className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-mono font-bold bg-blue-50/50 border border-blue-100/30 px-2 py-1 rounded-lg transition-colors"
+                            >
+                                <Phone className="w-3 h-3" /> {client.avalCellphone}
+                            </a>
+                        ) : (
+                            <span className="text-slate-400 font-bold bg-slate-100 px-2 py-1 rounded-lg">
+                                N/A
+                            </span>
+                        )}
                     </div>
-                    {client.avalCellphone ? (
-                        <a 
-                            href={`tel:${client.avalCellphone}`}
-                            onClick={(e) => e.stopPropagation()}
-                            className="flex items-center gap-1 text-blue-600 hover:text-blue-700 font-mono font-bold bg-blue-50/50 border border-blue-100/30 px-2 py-1 rounded-lg transition-colors"
-                        >
-                            <Phone className="w-3 h-3" /> {client.avalCellphone}
-                        </a>
-                    ) : (
-                        <span className="text-slate-400 font-bold bg-slate-100 px-2 py-1 rounded-lg">
-                            N/A
-                        </span>
-                    )}
+
+                    {/* Botones para Supervisar Aval y sus Garantías */}
+                    <div className="flex flex-wrap gap-2">
+                        {(client.avales && client.avales.length > 0 ? client.avales : [{ 
+                            name: client.avalName, 
+                            visitTimestamp: client.avalVisitTimestamp, 
+                            facadeUrl: client.avalFacadeUrl, 
+                            photoUrl: client.avalPhotoUrl,
+                            guarantees: []
+                        }]).map((aval, idx) => {
+                            const isVisited = !!aval.visitTimestamp;
+                            const isPartiallyDone = !isVisited && (!!aval.facadeUrl || !!aval.photoUrl || (aval.guarantees && aval.guarantees.length > 0));
+                            const avalLabel = aval.name ? aval.name.split(' ')[0] : `Aval ${idx + 1}`;
+                            
+                            return (
+                                <button 
+                                    key={idx}
+                                    type="button"
+                                    onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        setTargetAvalClient(client); 
+                                        setSelectedAvalIndex(idx); 
+                                        setView('aval_visit'); 
+                                    }}
+                                    className={`flex-1 min-w-[120px] py-2 px-3 rounded-xl font-black text-[9px] uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 shadow-xs active:scale-95 border ${
+                                      isVisited ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 
+                                      isPartiallyDone ? 'bg-amber-50 text-amber-700 border-amber-300' :
+                                      'bg-blue-600 hover:bg-blue-700 text-white border-blue-600 shadow-sm'
+                                    }`}
+                                >
+                                    {isVisited ? <CheckCircle className="w-3.5 h-3.5 text-emerald-600" /> : isPartiallyDone ? <AlertTriangle className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> : <UserCheck className="w-3.5 h-3.5" />}
+                                    {isVisited ? `${avalLabel} - Listo` : isPartiallyDone ? `${avalLabel} - Pendiente` : `Supervisar ${avalLabel}`}
+                                </button>
+                            );
+                        })}
+                    </div>
                 </div>
 
                 {/* BOTTOM TOOLBAR: MAPS, HISTORIAL, AND ACTIONS */}
@@ -2220,76 +2317,78 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                         </div>
 
                         {/* FORMULARIO DE GARANTIAS DEL AVAL */}
-                        {supervisorFinanciera?.requireGuaranteesForAval && (
-                            (avalGuarantees.length < (supervisorFinanciera?.minGuaranteesForAval || 1) || showCompletedGuarantees || !onlyShowPending) ? (
-                                <div className="space-y-4 bg-slate-50 p-6 rounded-3xl border border-slate-100 animate-in slide-in-from-top-4">
-                                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-3 flex items-center justify-between gap-2">
-                                        <div className="flex items-center gap-2">
-                                            <ShieldCheck className="w-4 h-4" /> Inventario de Garantías del Aval ({avalGuarantees.length})
-                                        </div>
-                                        {supervisorFinanciera?.minGuaranteesForAval ? (
-                                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${avalGuarantees.length >= supervisorFinanciera.minGuaranteesForAval ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>
-                                                MÍNIMO: {supervisorFinanciera.minGuaranteesForAval}
-                                            </span>
-                                        ) : null}
-                                    </h4>
-
-                                    {(avalGuarantees.length < (supervisorFinanciera?.minGuaranteesForAval || 1) || showCompletedGuarantees) ? (
-                                        <div className="flex flex-col gap-3">
-                                            <input
-                                                type="text"
-                                                value={newAvalGuarantee}
-                                                onChange={e => setNewAvalGuarantee(e.target.value.toUpperCase())}
-                                                onKeyDown={(e) => e.key === 'Enter' && handleAddAvalGuarantee()}
-                                                className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow uppercase text-sm"
-                                                placeholder="Ej: Moto Itallika 2024"
-                                            />
-                                            <button
-                                                onClick={handleAddAvalGuarantee}
-                                                className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-blue-100 flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all"
-                                            >
-                                                <Plus className="w-5 h-5" /> Agregar Garantía
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-3 flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                                <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                                <span className="text-[10px] font-black text-emerald-900 uppercase">Mínimo de Garantías Cubierto</span>
-                                            </div>
-                                            <button
-                                                onClick={() => setShowCompletedGuarantees(true)}
-                                                className="text-[8px] font-black text-blue-600 uppercase underline"
-                                            >
-                                                AGREGAR MÁS
-                                            </button>
-                                        </div>
-                                    )}
-
-                                    <div className="space-y-2 mt-4">
-                                        {avalGuarantees.length === 0 && (
-                                            <p className="text-[10px] font-bold text-slate-300 italic text-center py-2">
-                                                Lista vacía
-                                            </p>
-                                        )}
-                                        {avalGuarantees.map((g, i) => (
-                                            <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center animate-in slide-in-from-bottom-1">
-                                                <div className="flex items-center gap-3 overflow-hidden">
-                                                    <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
-                                                    <span className="text-xs font-black text-slate-700 uppercase truncate">{g.description}</span>
-                                                </div>
-                                                <button
-                                                    onClick={() => setAvalGuarantees(avalGuarantees.filter((_, idx) => idx !== i))}
-                                                    className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 hover:text-red-600 transition-colors"
-                                                >
-                                                    <Trash2 className="w-5 h-5" />
-                                                </button>
-                                            </div>
-                                        ))}
+                        {(avalGuarantees.length < (supervisorFinanciera?.minGuaranteesForAval || 1) || showCompletedGuarantees || !onlyShowPending || !supervisorFinanciera?.requireGuaranteesForAval) ? (
+                            <div className="space-y-4 bg-slate-50 p-6 rounded-3xl border border-slate-100 animate-in slide-in-from-top-4">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-3 flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2">
+                                        <ShieldCheck className="w-4 h-4" /> Inventario de Garantías del Aval ({avalGuarantees.length})
                                     </div>
+                                    {supervisorFinanciera?.requireGuaranteesForAval && supervisorFinanciera?.minGuaranteesForAval ? (
+                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${avalGuarantees.length >= supervisorFinanciera.minGuaranteesForAval ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>
+                                            MÍNIMO: {supervisorFinanciera.minGuaranteesForAval}
+                                        </span>
+                                    ) : (
+                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
+                                            OPCIONAL
+                                        </span>
+                                    )}
+                                </h4>
+
+                                {(avalGuarantees.length < (supervisorFinanciera?.minGuaranteesForAval || 1) || showCompletedGuarantees || !supervisorFinanciera?.requireGuaranteesForAval) ? (
+                                    <div className="flex flex-col gap-3">
+                                        <input
+                                            type="text"
+                                            value={newAvalGuarantee}
+                                            onChange={e => setNewAvalGuarantee(e.target.value.toUpperCase())}
+                                            onKeyDown={(e) => e.key === 'Enter' && handleAddAvalGuarantee()}
+                                            className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow uppercase text-sm"
+                                            placeholder="Ej: Moto Itallika 2024"
+                                        />
+                                        <button
+                                            onClick={handleAddAvalGuarantee}
+                                            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-blue-100 flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all"
+                                        >
+                                            <Plus className="w-5 h-5" /> Agregar Garantía
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-3 flex items-center justify-between">
+                                        <div className="flex items-center gap-2">
+                                            <CheckCircle className="w-4 h-4 text-emerald-500" />
+                                            <span className="text-[10px] font-black text-emerald-900 uppercase">Mínimo de Garantías Cubierto</span>
+                                        </div>
+                                        <button
+                                            onClick={() => setShowCompletedGuarantees(true)}
+                                            className="text-[8px] font-black text-blue-600 uppercase underline"
+                                        >
+                                            AGREGAR MÁS
+                                        </button>
+                                    </div>
+                                )}
+
+                                <div className="space-y-2 mt-4">
+                                    {avalGuarantees.length === 0 && (
+                                        <p className="text-[10px] font-bold text-slate-300 italic text-center py-2">
+                                            Lista vacía (Sin garantías registradas)
+                                        </p>
+                                    )}
+                                    {avalGuarantees.map((g, i) => (
+                                        <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center animate-in slide-in-from-bottom-1">
+                                            <div className="flex items-center gap-3 overflow-hidden">
+                                                <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
+                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{g.description}</span>
+                                            </div>
+                                            <button
+                                                onClick={() => setAvalGuarantees(avalGuarantees.filter((_, idx) => idx !== i))}
+                                                className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 hover:text-red-600 transition-colors"
+                                            >
+                                                <Trash2 className="w-5 h-5" />
+                                            </button>
+                                        </div>
+                                    ))}
                                 </div>
-                            ) : null
-                        )}
+                            </div>
+                        ) : null}
 
                         <button
                             disabled={isUploading}
@@ -4822,15 +4921,30 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                             {aval.visitTimestamp && <span className="text-[8px] font-black text-emerald-600 flex items-center gap-0.5"><CheckCircle className="w-2.5 h-2.5" /> VERIFICADO</span>}
                                                         </div>
                                                     </div>
-                                                    {aval.latitude && (
-                                                        <a
-                                                            href={`https://www.google.com/maps/search/?api=1&query=${aval.latitude},${aval.longitude}`}
-                                                            target="_blank"
-                                                            className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-100"
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setTargetAvalClient(selectedClientHistory);
+                                                                setSelectedAvalIndex(idx);
+                                                                setSelectedClientHistory(null);
+                                                                setView('aval_visit');
+                                                            }}
+                                                            className="p-2 text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg transition-colors border border-indigo-100 flex items-center gap-1 text-[9px] font-black uppercase shadow-xs active:scale-95"
+                                                            title="Supervisar / Visitar Aval y Garantías"
                                                         >
-                                                            <Navigation className="w-3.5 h-3.5" />
-                                                        </a>
-                                                    )}
+                                                            <UserCheck className="w-3.5 h-3.5" /> Visitar / Garantías
+                                                        </button>
+                                                        {aval.latitude && (
+                                                            <a
+                                                                href={`https://www.google.com/maps/search/?api=1&query=${aval.latitude},${aval.longitude}`}
+                                                                target="_blank"
+                                                                className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-100"
+                                                            >
+                                                                <Navigation className="w-3.5 h-3.5" />
+                                                            </a>
+                                                        )}
+                                                    </div>
                                                 </div>
 
                                                 {/* Aval Address */}

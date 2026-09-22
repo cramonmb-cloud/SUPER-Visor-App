@@ -38,6 +38,7 @@ interface AdminPanelV2Props {
   onBatchUpdateSupervisors: (ids: string[], data: Partial<Supervisor>) => void;
   onMoveClientsToWeek: (clientIds: string[], targetWeekId: string) => void;
   onMoveClientsToFinanciera: (clientIds: string[], targetFinancieraId: string) => void;
+  onMoveClientsToSupervisor?: (clientIds: string[], targetSupervisorId: string) => void | Promise<void>;
   fullSupervisorsList: Supervisor[];
   onCreateWeek: (financieraId: string) => void;
   onCloseWeek: (financieraId: string) => void;
