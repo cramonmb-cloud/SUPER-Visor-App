@@ -179,6 +179,7 @@ export interface SystemSettings {
   footerInfoHtml?: string; // NEW
   birthdayPetUrl?: string; // NEW: Image URL for birthday mascot / congratulation banner
   birthdayDurationSeconds?: number; // NEW: Duration in seconds to display birthday modal before auto-dismissing
+  avalRouteBgUrl?: string; // NEW: Image URL / background for Aval Visit screen ('none' to disable)
   forceUpdateTimestamp?: number; // NEW: Timestamp when forced update was broadcast
   forceUpdateVersionName?: string; // NEW: Target version name for the update
   forceUpdateMessage?: string; // NEW: Custom update message

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Supervisor, Client, Visit, Guarantee, SystemSettings, WorkWeek, Financiera, GuarantorRange, Guarantor } from '../types';
-import { Scan, MapPin, Camera, Check, X, Loader2, RefreshCw, UploadCloud, Map as MapIcon, User, Clock, CheckCircle, Home, Plus, Archive, Trash2, Lock, Smartphone, DollarSign, UserCheck, Users, QrCode, ChevronDown, ChevronUp, Calendar, Hash, Phone, History, Navigation, Package, Pencil, AlertTriangle, MessageSquare, Save, Search, ShieldCheck, ShieldAlert, Monitor, Image as LucideImage, Eye, UserMinus, Maximize2 } from 'lucide-react';
+import { Scan, MapPin, Camera, Check, X, Loader2, RefreshCw, UploadCloud, Map as MapIcon, User, Clock, CheckCircle, CheckCircle2, Home, Plus, Archive, Trash2, Lock, Smartphone, DollarSign, UserCheck, Users, QrCode, ChevronDown, ChevronUp, Calendar, Hash, Phone, History, Navigation, Package, Pencil, AlertTriangle, MessageSquare, Save, Search, ShieldCheck, ShieldAlert, Monitor, Image as LucideImage, Eye, UserMinus, Maximize2 } from 'lucide-react';
 import { storage, db } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { query, collection, where, getDocs, limit } from 'firebase/firestore';
@@ -176,9 +176,98 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         return { facadeUrl: facade, photoUrl: photo };
     }, [clients]);
 
+    // Helper to resolve contact information (address, cellphone) for an aval candidate without erroneously copying the client's home address
+    const resolveAvalContact = useCallback((targetName: string): { address: string; cellphone: string } => {
+        const norm = removeAccents((targetName || '').trim().toUpperCase());
+        if (!norm) return { address: '', cellphone: '' };
+
+        let foundAddress = '';
+        let foundCellphone = '';
+
+        // Priority 1: Check across all clients where this person is registered as an aval (avales array)
+        for (const cl of clients) {
+            if (cl.isArchived) continue;
+            if (cl.avales && cl.avales.length > 0) {
+                const match = cl.avales.find(a => a.name && removeAccents(a.name.trim().toUpperCase()) === norm);
+                if (match) {
+                    if (!foundAddress && match.address) foundAddress = match.address;
+                    if (!foundCellphone && match.cellphone) foundCellphone = match.cellphone;
+                }
+            }
+            if (cl.avalName && removeAccents(cl.avalName.trim().toUpperCase()) === norm) {
+                const legacyAddr = cl.avalAddress || cl.avales?.[0]?.address || '';
+                const legacyPhone = cl.avalCellphone || cl.avales?.[0]?.cellphone || '';
+                if (!foundAddress && legacyAddr) foundAddress = legacyAddr;
+                if (!foundCellphone && legacyPhone) foundCellphone = legacyPhone;
+            }
+            if (foundAddress && foundCellphone) return { address: foundAddress, cellphone: foundCellphone };
+        }
+
+        // Priority 2: Check if this person is registered as a Client themselves (only in that case can we use their address)
+        for (const cl of clients) {
+            if (cl.isArchived) continue;
+            if (cl.name && removeAccents(cl.name.trim().toUpperCase()) === norm) {
+                if (!foundAddress && cl.address) foundAddress = cl.address;
+                if (!foundCellphone && cl.cellphone) foundCellphone = cl.cellphone;
+            }
+            if (foundAddress && foundCellphone) return { address: foundAddress, cellphone: foundCellphone };
+        }
+
+        return { address: foundAddress, cellphone: foundCellphone };
+    }, [clients]);
+
+    // Helper to extract specific aval data from a client record, strictly distinguishing between aval records and client record
+    const resolveAvalDataFromClient = useCallback((targetClient: Client, targetAvalName: string): { address: string; cellphone: string; facadeUrl?: string; photoUrl?: string } => {
+        const normTarget = removeAccents((targetAvalName || '').trim().toUpperCase());
+        if (!normTarget || !targetClient) return { address: '', cellphone: '' };
+
+        // 1. Check in targetClient.avales array
+        if (targetClient.avales && targetClient.avales.length > 0) {
+            const foundInArray = targetClient.avales.find(a => a.name && removeAccents(a.name.trim().toUpperCase()) === normTarget);
+            if (foundInArray) {
+                return {
+                    address: foundInArray.address || '',
+                    cellphone: foundInArray.cellphone || '',
+                    facadeUrl: foundInArray.facadeUrl,
+                    photoUrl: foundInArray.photoUrl
+                };
+            }
+        }
+
+        // 2. Check legacy avalName
+        if (targetClient.avalName && removeAccents(targetClient.avalName.trim().toUpperCase()) === normTarget) {
+            return {
+                address: targetClient.avalAddress || targetClient.avales?.[0]?.address || '',
+                cellphone: targetClient.avalCellphone || targetClient.avales?.[0]?.cellphone || '',
+                facadeUrl: targetClient.avalFacadeUrl || targetClient.avales?.[0]?.facadeUrl,
+                photoUrl: targetClient.avalPhotoUrl || targetClient.avales?.[0]?.photoUrl
+            };
+        }
+
+        // 3. ONLY if targetClient IS this person (is client themselves)
+        if (targetClient.name && removeAccents(targetClient.name.trim().toUpperCase()) === normTarget) {
+            return {
+                address: targetClient.address || '',
+                cellphone: targetClient.cellphone || '',
+                facadeUrl: targetClient.facadeUrl,
+                photoUrl: targetClient.clientPhotoUrl
+            };
+        }
+
+        // Fallback: if targetClient has avalAddress (legacy single aval), return avalAddress, NEVER client's personal address!
+        return {
+            address: targetClient.avalAddress || targetClient.avales?.[0]?.address || '',
+            cellphone: targetClient.avalCellphone || targetClient.avales?.[0]?.cellphone || '',
+            facadeUrl: targetClient.avalFacadeUrl || targetClient.avales?.[0]?.facadeUrl,
+            photoUrl: targetClient.avalPhotoUrl || targetClient.avales?.[0]?.photoUrl
+        };
+    }, []);
+
     const avalSuggestions = useMemo(() => {
         const norm = removeAccents(avalName.trim().toUpperCase());
         if (!norm || norm.length < 2) return [];
+
+        const normCurrentClient = removeAccents((clientName || '').trim().toUpperCase());
 
         const candidateMap = new Map<string, {
             id: string;
@@ -196,35 +285,14 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             if (cl.isArchived) return;
             const supName = allSupervisors.find(s => s.id === cl.supervisorId)?.name || supervisor.name || 'S/S';
 
-            // 1. Check legacy avalName
-            if (cl.avalName) {
-                const normAval = removeAccents(cl.avalName.trim().toUpperCase());
-                if (normAval.includes(norm)) {
-                    if (!candidateMap.has(normAval)) {
-                        candidateMap.set(normAval, {
-                            id: `legacy-${cl.id}`,
-                            name: cl.avalName.trim().toUpperCase(),
-                            address: cl.avalAddress || '',
-                            cellphone: cl.avalCellphone || '',
-                            facadeUrl: cl.avalFacadeUrl || '',
-                            photoUrl: cl.avalPhotoUrl || '',
-                            guarantees: [],
-                            supervisorName: supName,
-                            sourceClient: cl
-                        });
-                    } else {
-                        const existing = candidateMap.get(normAval)!;
-                        if (!existing.facadeUrl && cl.avalFacadeUrl) existing.facadeUrl = cl.avalFacadeUrl;
-                        if (!existing.photoUrl && cl.avalPhotoUrl) existing.photoUrl = cl.avalPhotoUrl;
-                    }
-                }
-            }
-
-            // 2. Check cl.avales array
+            // 1. Check cl.avales array (modern multi-aval structure first)
             if (cl.avales && cl.avales.length > 0) {
                 cl.avales.forEach((a, idx) => {
                     if (a.name) {
                         const normA = removeAccents(a.name.trim().toUpperCase());
+                        // Never suggest the current client being registered as their own aval
+                        if (normCurrentClient && normA === normCurrentClient) return;
+
                         if (normA.includes(norm)) {
                             if (!candidateMap.has(normA)) {
                                 candidateMap.set(normA, {
@@ -240,6 +308,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                 });
                             } else {
                                 const existing = candidateMap.get(normA)!;
+                                if (!existing.address && a.address) existing.address = a.address;
+                                if (!existing.cellphone && a.cellphone) existing.cellphone = a.cellphone;
                                 if (!existing.facadeUrl && a.facadeUrl) existing.facadeUrl = a.facadeUrl;
                                 if (!existing.photoUrl && a.photoUrl) existing.photoUrl = a.photoUrl;
                                 if ((!existing.guarantees || existing.guarantees.length === 0) && a.guarantees && a.guarantees.length > 0) {
@@ -251,9 +321,45 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 });
             }
 
-            // 3. Check client themselves as an aval candidate
+            // 2. Check legacy avalName
+            if (cl.avalName) {
+                const normAval = removeAccents(cl.avalName.trim().toUpperCase());
+                // Never suggest the current client being registered as their own aval
+                if (normCurrentClient && normAval === normCurrentClient) return;
+
+                if (normAval.includes(norm)) {
+                    const avalAddr = cl.avalAddress || cl.avales?.[0]?.address || '';
+                    const avalPhone = cl.avalCellphone || cl.avales?.[0]?.cellphone || '';
+                    const avalFacade = cl.avalFacadeUrl || cl.avales?.[0]?.facadeUrl || '';
+                    const avalPhoto = cl.avalPhotoUrl || cl.avales?.[0]?.photoUrl || '';
+
+                    if (!candidateMap.has(normAval)) {
+                        candidateMap.set(normAval, {
+                            id: `legacy-${cl.id}`,
+                            name: cl.avalName.trim().toUpperCase(),
+                            address: avalAddr,
+                            cellphone: avalPhone,
+                            facadeUrl: avalFacade,
+                            photoUrl: avalPhoto,
+                            guarantees: [],
+                            supervisorName: supName,
+                            sourceClient: cl
+                        });
+                    } else {
+                        const existing = candidateMap.get(normAval)!;
+                        if (!existing.address && avalAddr) existing.address = avalAddr;
+                        if (!existing.cellphone && avalPhone) existing.cellphone = avalPhone;
+                        if (!existing.facadeUrl && avalFacade) existing.facadeUrl = avalFacade;
+                        if (!existing.photoUrl && avalPhoto) existing.photoUrl = avalPhoto;
+                    }
+                }
+            }
+
+            // 3. Check client themselves as an aval candidate (only if other clients, never the current one)
             if (cl.name) {
                 const normClientName = removeAccents(cl.name.trim().toUpperCase());
+                if (normCurrentClient && normClientName === normCurrentClient) return;
+
                 if (normClientName.includes(norm)) {
                     if (!candidateMap.has(normClientName)) {
                         candidateMap.set(normClientName, {
@@ -269,18 +375,17 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                         });
                     } else {
                         const existing = candidateMap.get(normClientName)!;
+                        if (!existing.address && cl.address) existing.address = cl.address;
+                        if (!existing.cellphone && cl.cellphone) existing.cellphone = cl.cellphone;
                         if (!existing.facadeUrl && cl.facadeUrl) existing.facadeUrl = cl.facadeUrl;
                         if (!existing.photoUrl && cl.clientPhotoUrl) existing.photoUrl = cl.clientPhotoUrl;
-                        if ((!existing.guarantees || existing.guarantees.length === 0) && cl.guarantees && cl.guarantees.length > 0) {
-                            existing.guarantees = cl.guarantees;
-                        }
                     }
                 }
             }
         });
 
         return Array.from(candidateMap.values()).slice(0, 30);
-    }, [avalName, clients, allSupervisors, supervisor]);
+    }, [avalName, clientName, clients, allSupervisors, supervisor]);
 
     const [aval2Name, setAval2Name] = useState('');
     const [aval2Address, setAval2Address] = useState('');
@@ -344,6 +449,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const [showCompletedAvalPhoto, setShowCompletedAvalPhoto] = useState(false);
     const [showCompletedGuarantees, setShowCompletedGuarantees] = useState(false);
     const [onlyShowPending, setOnlyShowPending] = useState(false);
+    const [forceShowAvalInputs, setForceShowAvalInputs] = useState(false);
 
     // Determine minGuarantees: Prefer financiera-specific setting, fallback to global
     const supervisorFinanciera = financieras.find(f => f.id === supervisor.financieraId);
@@ -383,8 +489,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
         // Guarantees
         total += 1;
-        const minG = supervisorFinanciera?.minGuarantees ?? 0;
-        if (guarantees.length >= minG) filled++;
+        const minG = Math.max(1, supervisorFinanciera?.minGuarantees ?? settings.registrationRules?.minGuarantees ?? (settings.registrationRules?.requireGuarantee ? 1 : 0));
+        if (guarantees.length >= minG || (newGuarantee.trim() && (guarantees.length + 1) >= minG)) filled++;
 
         // Photos
         if (requireFacade) {
@@ -402,18 +508,22 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const getAvalFormProgress = () => {
         let total = 0;
         let filled = 0;
-        const minGAval = supervisorFinanciera?.minGuaranteesForAval ?? 0;
+        const minGAval = Math.max(1, supervisorFinanciera?.minGuaranteesForAval ?? 1);
 
         // Aval 1
         total += 4;
         if (avalName.trim()) filled++;
         if (avalAddress.trim()) filled++;
         if (avalCellphone.trim().length >= 10) filled++;
-        if (aval1Guarantees.length >= minGAval) filled++;
+        if (aval1Guarantees.length >= minGAval || (newAval1Guarantee.trim() && (aval1Guarantees.length + 1) >= minGAval)) filled++;
 
         if (requireGuarantorFacade) {
             total++;
             if (avalFacadeFile || avalFacadePreview || (aval1IsClient && aval1SelectedClient?.facadeUrl)) filled++;
+        }
+        if (requireGuarantorPhoto) {
+            total++;
+            if (avalPhotoFile || avalPhotoPreview || (aval1IsClient && aval1SelectedClient?.clientPhotoUrl)) filled++;
         }
 
         // Aval 2
@@ -422,11 +532,15 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             if (aval2Name.trim()) filled++;
             if (aval2Address.trim()) filled++;
             if (aval2Cellphone.trim().length >= 10) filled++;
-            if (aval2Guarantees.length >= minGAval) filled++;
+            if (aval2Guarantees.length >= minGAval || (newAval2Guarantee.trim() && (aval2Guarantees.length + 1) >= minGAval)) filled++;
 
             if (requireGuarantorFacade) {
                 total++;
                 if (aval2FacadeFile || aval2FacadePreview || (aval2IsClient && aval2SelectedClient?.facadeUrl)) filled++;
+            }
+            if (requireGuarantorPhoto) {
+                total++;
+                if (aval2PhotoFile || aval2PhotoPreview || (aval2IsClient && aval2SelectedClient?.clientPhotoUrl)) filled++;
             }
         }
 
@@ -436,11 +550,15 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             if (aval3Name.trim()) filled++;
             if (aval3Address.trim()) filled++;
             if (aval3Cellphone.trim().length >= 10) filled++;
-            if (aval3Guarantees.length >= minGAval) filled++;
+            if (aval3Guarantees.length >= minGAval || (newAval3Guarantee.trim() && (aval3Guarantees.length + 1) >= minGAval)) filled++;
 
             if (requireGuarantorFacade) {
                 total++;
                 if (aval3FacadeFile || aval3FacadePreview) filled++;
+            }
+            if (requireGuarantorPhoto) {
+                total++;
+                if (aval3PhotoFile || aval3PhotoPreview) filled++;
             }
         }
 
@@ -455,7 +573,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         if (Number(client.creditAmount) > 0) filled++;
         if (client.cellphone?.trim().length >= 10) filled++;
 
-        const minG = supervisorFinanciera?.minGuarantees ?? 0;
+        const minG = Math.max(1, supervisorFinanciera?.minGuarantees ?? settings.registrationRules?.minGuarantees ?? (settings.registrationRules?.requireGuarantee ? 1 : 0));
         total += 1;
         if ((client.guarantees?.length || 0) >= minG) filled++;
 
@@ -475,7 +593,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         let total = 0;
         let filled = 0;
 
-        const minGAval = supervisorFinanciera?.minGuaranteesForAval ?? 0;
+        const minGAval = Math.max(1, supervisorFinanciera?.minGuaranteesForAval ?? 1);
         const list = client.avales && client.avales.length > 0
             ? client.avales
             : [{
@@ -515,11 +633,17 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 const facade = resolved.facadeUrl;
                 if (facade) filled++;
             }
+            if (requireGuarantorPhoto) {
+                total++;
+                const resolved = resolveAvalPhotos(av.name, (idx === 0 ? (av.facadeUrl || client.avalFacadeUrl) : av.facadeUrl), (idx === 0 ? (av.photoUrl || client.avalPhotoUrl) : av.photoUrl));
+                const photo = resolved.photoUrl;
+                if (photo) filled++;
+            }
         });
 
         // If list length is less than required, add the missing ones to the total
         if (list.length < reqAvals) {
-            total += (reqAvals - list.length) * (4 + (requireGuarantorFacade ? 1 : 0));
+            total += (reqAvals - list.length) * (4 + (requireGuarantorFacade ? 1 : 0) + (requireGuarantorPhoto ? 1 : 0));
         }
 
         return total > 0 ? Math.round((filled / total) * 100) : 0;
@@ -571,24 +695,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     const financieraGuarantorCandidates = useMemo(() => {
         const candidateMap = new Map<string, { name: string; address: string; cellphone: string; facadeUrl?: string; photoUrl?: string }>();
 
-        financieraClients.forEach(c => {
-            const normalized = removeAccents(c.name.trim().toUpperCase());
-            if (!normalized) return;
-            if (!candidateMap.has(normalized)) {
-                candidateMap.set(normalized, {
-                    name: c.name,
-                    address: c.address || '',
-                    cellphone: c.cellphone || '',
-                    facadeUrl: c.facadeUrl,
-                    photoUrl: c.clientPhotoUrl
-                });
-            } else {
-                const item = candidateMap.get(normalized)!;
-                if (!item.facadeUrl && c.facadeUrl) item.facadeUrl = c.facadeUrl;
-                if (!item.photoUrl && c.clientPhotoUrl) item.photoUrl = c.clientPhotoUrl;
-            }
-        });
-
+        // 1. Process avales from modern avales[] array first (most accurate for guarantors)
         financieraClients.forEach(c => {
             if (c.avales && Array.isArray(c.avales)) {
                 c.avales.forEach(av => {
@@ -597,7 +704,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     if (!normalized) return;
                     if (!candidateMap.has(normalized)) {
                         candidateMap.set(normalized, {
-                            name: av.name,
+                            name: av.name.trim().toUpperCase(),
                             address: av.address || '',
                             cellphone: av.cellphone || '',
                             facadeUrl: av.facadeUrl,
@@ -605,28 +712,60 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                         });
                     } else {
                         const item = candidateMap.get(normalized)!;
+                        if (!item.address && av.address) item.address = av.address;
+                        if (!item.cellphone && av.cellphone) item.cellphone = av.cellphone;
                         if (!item.facadeUrl && av.facadeUrl) item.facadeUrl = av.facadeUrl;
                         if (!item.photoUrl && av.photoUrl) item.photoUrl = av.photoUrl;
                     }
                 });
             }
+
+            // 2. Process legacy avalName
             if (c.avalName) {
                 const normalized = removeAccents(c.avalName.trim().toUpperCase());
                 if (normalized) {
+                    const avalAddr = c.avalAddress || c.avales?.[0]?.address || '';
+                    const avalPhone = c.avalCellphone || c.avales?.[0]?.cellphone || '';
+                    const avalFacade = c.avalFacadeUrl || c.avales?.[0]?.facadeUrl;
+                    const avalPhoto = c.avalPhotoUrl || c.avales?.[0]?.photoUrl;
+
                     if (!candidateMap.has(normalized)) {
                         candidateMap.set(normalized, {
-                            name: c.avalName,
-                            address: c.avalAddress || '',
-                            cellphone: c.avalCellphone || '',
-                            facadeUrl: c.avalFacadeUrl,
-                            photoUrl: c.avalPhotoUrl
+                            name: c.avalName.trim().toUpperCase(),
+                            address: avalAddr,
+                            cellphone: avalPhone,
+                            facadeUrl: avalFacade,
+                            photoUrl: avalPhoto
                         });
                     } else {
                         const item = candidateMap.get(normalized)!;
-                        if (!item.facadeUrl && c.avalFacadeUrl) item.facadeUrl = c.avalFacadeUrl;
-                        if (!item.photoUrl && c.avalPhotoUrl) item.photoUrl = c.avalPhotoUrl;
+                        if (!item.address && avalAddr) item.address = avalAddr;
+                        if (!item.cellphone && avalPhone) item.cellphone = avalPhone;
+                        if (!item.facadeUrl && avalFacade) item.facadeUrl = avalFacade;
+                        if (!item.photoUrl && avalPhoto) item.photoUrl = avalPhoto;
                     }
                 }
+            }
+        });
+
+        // 3. Process clients themselves as candidates (e.g. if a client acts as an aval elsewhere)
+        financieraClients.forEach(c => {
+            const normalized = removeAccents((c.name || '').trim().toUpperCase());
+            if (!normalized) return;
+            if (!candidateMap.has(normalized)) {
+                candidateMap.set(normalized, {
+                    name: c.name.trim().toUpperCase(),
+                    address: c.address || '',
+                    cellphone: c.cellphone || '',
+                    facadeUrl: c.facadeUrl,
+                    photoUrl: c.clientPhotoUrl
+                });
+            } else {
+                const item = candidateMap.get(normalized)!;
+                if (!item.address && c.address) item.address = c.address;
+                if (!item.cellphone && c.cellphone) item.cellphone = c.cellphone;
+                if (!item.facadeUrl && c.facadeUrl) item.facadeUrl = c.facadeUrl;
+                if (!item.photoUrl && c.clientPhotoUrl) item.photoUrl = c.clientPhotoUrl;
             }
         });
 
@@ -741,28 +880,39 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             setShowCompletedFacade(false);
             setShowCompletedAvalPhoto(false);
             setShowCompletedGuarantees(false);
+            setForceShowAvalInputs(false);
 
-            const curAval = targetAvalClient.avales?.[selectedAvalIndex];
-            if (curAval) {
-                setAvalGuarantees(curAval.guarantees || []);
-                setAvalFacadePreview(curAval.facadeUrl || null);
-                setAvalPhotoPreview(curAval.photoUrl || null);
-                // Also reset current files if we start a new visit session
-                setFacadeFile(null);
-                setAvalPhotoFile(null);
-            } else if (selectedAvalIndex === 1 || selectedAvalIndex === 2) {
-                // New structure might not have indices 1 or 2 yet
-                setAvalGuarantees([]);
-                setAvalFacadePreview(null);
-                setAvalPhotoPreview(null);
-            } else {
-                // Fallback for primary aval if using legacy fields (usually index 0)
-                setAvalGuarantees([]);
-                setAvalFacadePreview(targetAvalClient.avalFacadeUrl || null);
-                setAvalPhotoPreview(targetAvalClient.avalPhotoUrl || null);
-            }
+            const curAval = (targetAvalClient.avales && targetAvalClient.avales[selectedAvalIndex])
+                ? targetAvalClient.avales[selectedAvalIndex]
+                : (selectedAvalIndex === 0 ? {
+                    name: targetAvalClient.avalName,
+                    address: targetAvalClient.avalAddress,
+                    cellphone: targetAvalClient.avalCellphone,
+                    facadeUrl: targetAvalClient.avalFacadeUrl,
+                    photoUrl: targetAvalClient.avalPhotoUrl,
+                    guarantees: targetAvalClient.avales?.[0]?.guarantees || []
+                } : null);
+
+            const rawGuarantees = curAval?.guarantees || (selectedAvalIndex === 0 ? (targetAvalClient.avales?.[0]?.guarantees || []) : []) || [];
+            const initialGuarantees: Guarantee[] = rawGuarantees.map((g: any) => typeof g === 'string' ? { description: g } : g);
+            setAvalGuarantees(initialGuarantees);
+
+            const resolved = resolveAvalPhotos(
+                curAval?.name || (selectedAvalIndex === 0 ? targetAvalClient.avalName : ''),
+                curAval?.facadeUrl || (selectedAvalIndex === 0 ? targetAvalClient.avalFacadeUrl : ''),
+                curAval?.photoUrl || (selectedAvalIndex === 0 ? targetAvalClient.avalPhotoUrl : '')
+            );
+
+            const initialFacade = curAval?.facadeUrl || resolved.facadeUrl || (selectedAvalIndex === 0 ? targetAvalClient.avalFacadeUrl : '') || null;
+            const initialPhoto = curAval?.photoUrl || resolved.photoUrl || (selectedAvalIndex === 0 ? targetAvalClient.avalPhotoUrl : '') || null;
+
+            setFacadePreview(initialFacade);
+            setAvalFacadePreview(initialFacade);
+            setAvalPhotoPreview(initialPhoto);
+            setFacadeFile(null);
+            setAvalPhotoFile(null);
         }
-    }, [view, targetAvalClient, selectedAvalIndex]);
+    }, [view, targetAvalClient, selectedAvalIndex, resolveAvalPhotos]);
 
     const handleScanSuccess = async (code: string) => {
         try {
@@ -1356,12 +1506,15 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         setClientAddress(client.address || '');
         setCreditAmount(client.creditAmount?.toString() || '');
         setCellphone(client.cellphone || '');
-        setAvalName(client.avalName || '');
-        setAvalAddress(client.avalAddress || '');
-        setAvalCellphone(client.avalCellphone || '');
+        setAvalName(client.avales?.[0]?.name || client.avalName || '');
+        setAvalAddress(client.avales?.[0]?.address || client.avalAddress || '');
+        setAvalCellphone(client.avales?.[0]?.cellphone || client.avalCellphone || '');
 
         // NEW: Populate multiple avales and their guarantees if they exist
         if (client.avales && client.avales.length > 0) {
+            setAvalName(client.avales[0].name || client.avalName || '');
+            setAvalAddress(client.avales[0].address || client.avalAddress || '');
+            setAvalCellphone(client.avales[0].cellphone || client.avalCellphone || '');
             setAval1Guarantees(client.avales[0].guarantees ? client.avales[0].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')) : []);
             if (client.avales.length > 1) {
                 setAval2Name(client.avales[1].name);
@@ -1539,10 +1692,34 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     };
 
     // Helper to trigger aval coincidence check when selected from suggestions list
-    const handleSelectAvalCandidate = useCallback((c: Client, selectedName?: string, selectedAddress?: string, selectedCellphone?: string, selectedFacadeUrl?: string, selectedPhotoUrl?: string, selectedGuarantees?: any[]) => {
-        const finalName = selectedName || c.avalName || c.name;
-        const finalAddress = selectedAddress || c.avalAddress || c.address || '';
-        const finalCellphone = selectedCellphone || c.avalCellphone || c.cellphone || '';
+    const handleSelectAvalCandidate = useCallback((c: Client, selectedName?: string, selectedAddress?: string, selectedCellphone?: string, selectedFacadeUrl?: string, selectedPhotoUrl?: string) => {
+        const finalName = selectedName || c.avalName || c.avales?.[0]?.name || c.name;
+        const normFinalName = removeAccents((finalName || '').trim().toUpperCase());
+        const normClientName = removeAccents((c.name || '').trim().toUpperCase());
+        const isClientThemself = normFinalName === normClientName;
+
+        let finalAddress = selectedAddress || '';
+        let finalCellphone = selectedCellphone || '';
+
+        // If not directly supplied, extract specifically from client record c
+        if (!finalAddress || !finalCellphone) {
+            const clientData = resolveAvalDataFromClient(c, finalName);
+            if (!finalAddress && clientData.address) finalAddress = clientData.address;
+            if (!finalCellphone && clientData.cellphone) finalCellphone = clientData.cellphone;
+
+            // ONLY if candidate IS the client themselves, allow using the client's own address/cellphone
+            if (isClientThemself) {
+                if (!finalAddress && c.address) finalAddress = c.address;
+                if (!finalCellphone && c.cellphone) finalCellphone = c.cellphone;
+            }
+        }
+
+        // If still missing address or cellphone, scan all clients for this aval's contact info
+        if (!finalAddress || !finalCellphone) {
+            const resolvedContact = resolveAvalContact(finalName);
+            if (!finalAddress && resolvedContact.address) finalAddress = resolvedContact.address;
+            if (!finalCellphone && resolvedContact.cellphone) finalCellphone = resolvedContact.cellphone;
+        }
 
         setAvalName(finalName);
         setAvalAddress(finalAddress);
@@ -1553,13 +1730,8 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         if (resolved.facadeUrl) setAvalFacadePreview(resolved.facadeUrl);
         if (resolved.photoUrl) setAvalPhotoPreview(resolved.photoUrl);
 
-        // Copy guarantees if candidate had them
-        if (selectedGuarantees && selectedGuarantees.length > 0) {
-            const guaranteeStrings = selectedGuarantees.map(g => typeof g === 'string' ? g : (g.description || '')).filter(Boolean);
-            if (guaranteeStrings.length > 0) {
-                setAval1Guarantees(prev => Array.from(new Set([...prev, ...guaranteeStrings])));
-            }
-        }
+        // Las garantías del aval no se deben jalar de registros anteriores; deben ingresarse desde cero
+        setAval1Guarantees([]);
 
         setShowAvalSuggestions(false);
 
@@ -1594,7 +1766,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         } else {
             setCoincidenceAval(null);
         }
-    }, [clientName, clients, allWeeks, maxClientAsAval, maxAvalRegistrations, resolveAvalPhotos]);
+    }, [clientName, clients, allWeeks, maxClientAsAval, maxAvalRegistrations, resolveAvalPhotos, resolveAvalDataFromClient, resolveAvalContact]);
 
     // Coincidence check effects (disabled automatic popups while typing; modals trigger on explicit selection)
     useEffect(() => {
@@ -1700,17 +1872,17 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         setAvalAddress(client.avalAddress || '');
         setAvalCellphone(client.avalCellphone || '');
 
-        // Pre-fill multiple avales if they exist
+        // Pre-fill multiple avales if they exist (sin jalar garantías anteriores)
         if (client.avales && client.avales.length > 0) {
             setAvalName(client.avales[0].name);
             setAvalAddress(client.avales[0].address || '');
             setAvalCellphone(client.avales[0].cellphone || '');
-            setAval1Guarantees(client.avales[0].guarantees ? client.avales[0].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')).filter(Boolean) : []);
+            setAval1Guarantees([]);
             if (client.avales.length > 1) {
                 setAval2Name(client.avales[1].name);
                 setAval2Address(client.avales[1].address || '');
                 setAval2Cellphone(client.avales[1].cellphone || '');
-                setAval2Guarantees(client.avales[1].guarantees ? client.avales[1].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')).filter(Boolean) : []);
+                setAval2Guarantees([]);
             } else {
                 setAval2Name(''); setAval2Address(''); setAval2Cellphone(''); setAval2Guarantees([]);
             }
@@ -1718,7 +1890,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 setAval3Name(client.avales[2].name);
                 setAval3Address(client.avales[2].address || '');
                 setAval3Cellphone(client.avales[2].cellphone || '');
-                setAval3Guarantees(client.avales[2].guarantees ? client.avales[2].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')).filter(Boolean) : []);
+                setAval3Guarantees([]);
             } else {
                 setAval3Name(''); setAval3Address(''); setAval3Cellphone(''); setAval3Guarantees([]);
             }
@@ -2118,7 +2290,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     <button
                         onClick={() => currentWeek ? setView('scan') : alert("Sistema Cerrado")}
                         disabled={!currentWeek}
-                        className={`w-full py-6 rounded-3xl flex flex-col items-center justify-center gap-2 text-white font-black shadow-2xl uppercase transition-all active:scale-95 ${currentWeek ? 'bg-indigo-600 shadow-indigo-200' : 'bg-slate-300'}`}
+                        className={`w-full py-6 rounded-3xl flex flex-col items-center justify-center gap-2 text-white font-black shadow-2xl uppercase transition-all active:scale-95 ${currentWeek ? 'bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 hover:from-blue-950 hover:to-indigo-950 shadow-blue-900/30' : 'bg-slate-300 shadow-none'}`}
                     >
                         <div className="flex items-center gap-3">
                             <Scan className="w-8 h-8" />
@@ -2228,177 +2400,369 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                         <h3 className="text-lg font-black text-blue-900 uppercase">Visita de Aval</h3>
                         <div className="w-8"></div>
                     </div>
-                    <p className="text-xs text-slate-400 mb-8 text-center font-bold uppercase">
-                        REGISTRANDO DOMICILIO PARA: <span className="text-blue-600 font-black">
-                            {(targetAvalClient?.avales && targetAvalClient.avales[selectedAvalIndex])
-                                ? targetAvalClient.avales[selectedAvalIndex].name
-                                : targetAvalClient?.avalName}
-                        </span>
-                    </p>
+                    {(() => {
+                        const curAval = (targetAvalClient?.avales && targetAvalClient.avales[selectedAvalIndex])
+                            ? targetAvalClient.avales[selectedAvalIndex]
+                            : {
+                                name: targetAvalClient?.avalName || '',
+                                address: targetAvalClient?.avalAddress || '',
+                                cellphone: targetAvalClient?.avalCellphone || '',
+                                facadeUrl: targetAvalClient?.avalFacadeUrl || '',
+                                photoUrl: targetAvalClient?.avalPhotoUrl || '',
+                                guarantees: targetAvalClient?.avales?.[0]?.guarantees || []
+                            };
 
-                    <div className="space-y-8">
-                        {/* HELPER TEXT TO INDICATE PENDING ITEMS */}
-                        <div className="bg-slate-50 border border-slate-100 p-4 rounded-2xl flex items-center justify-between animate-in fade-in">
-                            <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-xl shadow-sm ${onlyShowPending ? 'bg-amber-100 text-amber-600' : 'bg-indigo-100 text-indigo-600'}`}>
-                                    {onlyShowPending ? <Hash className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                                </div>
-                                <div>
-                                    <p className="text-[10px] font-black text-slate-900 uppercase">Filtro de Campos</p>
-                                    <p className="text-[9px] font-bold text-slate-500 uppercase">{onlyShowPending ? 'Mostrando solo lo pendiente' : 'Mostrando todos los campos'}</p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setOnlyShowPending(!onlyShowPending)}
-                                className={`px-4 py-2 rounded-xl text-[9px] font-black uppercase transition-all ${onlyShowPending ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-100' : 'bg-white border border-slate-200 text-slate-600'}`}
-                            >
-                                {onlyShowPending ? 'Ver Todo' : 'Solo Pendiente'}
-                            </button>
-                        </div>
+                        const avalNameDisplay = curAval.name || targetAvalClient?.avalName || 'Aval';
+                        const avalAddressDisplay = curAval.address || targetAvalClient?.avalAddress || '';
+                        const avalCellphoneDisplay = curAval.cellphone || targetAvalClient?.avalCellphone || '';
 
-                        <div className={`grid gap-3 ${(requireGuarantorPhoto && requireGuarantorFacade) ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                            {/* FACHADA */}
-                            {requireGuarantorFacade && (
-                                (!(targetAvalClient?.avales?.[selectedAvalIndex]?.facadeUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalFacadeUrl)) || facadeFile || showCompletedFacade || !onlyShowPending) ? (
-                                    <div className={`border-2 border-dashed rounded-3xl p-3 text-center transition-all ${(!(targetAvalClient?.avales?.[selectedAvalIndex]?.facadeUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalFacadeUrl)) || facadeFile || showCompletedFacade) ? 'border-slate-100 bg-slate-50/50' : 'border-emerald-200 bg-emerald-50/30 opacity-60'}`}>
-                                        {(!(targetAvalClient?.avales?.[selectedAvalIndex]?.facadeUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalFacadeUrl)) || facadeFile || showCompletedFacade) ? (
-                                            <>
-                                                {!facadePreview ? (
-                                                    <div onClick={() => fileInputRef.current?.click()} className="cursor-pointer py-6 space-y-2">
-                                                        <Camera className="w-8 h-8 text-blue-500 mx-auto opacity-80" />
-                                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Foto Fachada</p>
-                                                    </div>
-                                                ) : (
-                                                    <div className="relative">
-                                                        <img src={facadePreview} className="h-32 w-full object-cover rounded-2xl shadow-md" />
-                                                        <button onClick={() => { setFacadeFile(null); setFacadePreview(null); }} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white p-1 rounded-full shadow-lg"><Trash2 className="w-3.5 h-3.5" /></button>
-                                                    </div>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <div className="py-4 flex flex-col items-center justify-center gap-1">
-                                                <CheckCircle className="w-6 h-6 text-emerald-500" />
-                                                <p className="text-[8px] font-black text-emerald-600 uppercase">Fachada Lista</p>
-                                                <button onClick={() => setShowCompletedFacade(true)} className="text-[7px] font-bold text-slate-400 underline uppercase mt-1">Editar</button>
-                                            </div>
+                        const currentFacadeImg = facadePreview || avalFacadePreview || curAval.facadeUrl || (selectedAvalIndex === 0 ? targetAvalClient?.avalFacadeUrl : null);
+                        const currentPhotoImg = avalPhotoPreview || curAval.photoUrl || (selectedAvalIndex === 0 ? targetAvalClient?.avalPhotoUrl : null);
+
+                        const minGAvalReq = Math.max(1, supervisorFinanciera?.minGuaranteesForAval ?? 1);
+                        const hasFacadePhoto = !requireGuarantorFacade || !!(facadeFile || currentFacadeImg);
+                        const hasGuaranteesList = avalGuarantees.length >= minGAvalReq;
+                        const hasGuarantorPersonPhoto = !requireGuarantorPhoto || !!(avalPhotoFile || currentPhotoImg);
+
+                        const isAllComplete = hasFacadePhoto && hasGuaranteesList && hasGuarantorPersonPhoto;
+                        const isAlreadyConfirmed = !!(curAval.visitTimestamp || (selectedAvalIndex === 0 && targetAvalClient?.avalVisitTimestamp));
+
+                        // CASO 1: Aval ya confirmado y con todo completo
+                        if (isAlreadyConfirmed && isAllComplete && !forceShowAvalInputs) {
+                            return (
+                                <div className="space-y-6 py-6 text-center animate-in fade-in duration-200">
+                                    <div className="max-w-md mx-auto space-y-3 px-4">
+                                        <h4 className="text-lg sm:text-xl font-black text-slate-900 uppercase tracking-tight">
+                                            Aval Confirmado y Listo
+                                        </h4>
+                                        <p className="text-sm sm:text-base font-bold text-slate-600 leading-relaxed">
+                                            Ya está todo completo con este aval y no es necesario realizar ninguna otra acción.
+                                        </p>
+                                    </div>
+
+                                    {/* Botón para volver a la lista */}
+                                    <div className="pt-4 max-w-sm mx-auto">
+                                        <button
+                                            type="button"
+                                            onClick={() => setView('list')}
+                                            className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white rounded-2xl font-black uppercase text-xs sm:text-sm tracking-wider shadow-lg active:scale-95 transition-all"
+                                        >
+                                            Volver a la lista
+                                        </button>
+                                    </div>
+
+                                    {/* Enlace para revisar datos */}
+                                    <div className="text-center pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setForceShowAvalInputs(true)}
+                                            className="text-xs font-extrabold text-slate-400 hover:text-slate-700 underline uppercase tracking-wide transition-colors"
+                                        >
+                                            Revisar o modificar datos del aval
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        }
+
+                        const routeBg = settings?.avalRouteBgUrl !== undefined ? settings.avalRouteBgUrl : '/route-map-visit.png';
+                        const hasRouteBg = routeBg && routeBg !== 'none' && routeBg.trim() !== '';
+
+                        if (isAllComplete && !forceShowAvalInputs) {
+                            return (
+                                <div className="space-y-6 animate-in fade-in duration-200">
+                                    {/* Aval info chip */}
+                                    <div className="text-center space-y-1">
+                                        <span className="px-3.5 py-1.5 bg-blue-50 text-blue-900 border border-blue-200/80 rounded-full text-[11px] font-black uppercase tracking-wider inline-flex items-center gap-1.5 shadow-2xs">
+                                            <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse"></span>
+                                            Aval: {avalNameDisplay}
+                                        </span>
+                                        {avalAddressDisplay && (
+                                            <p className="text-xs font-bold text-slate-500 uppercase max-w-sm mx-auto truncate" title={avalAddressDisplay}>
+                                                📍 {avalAddressDisplay}
+                                            </p>
                                         )}
                                     </div>
-                                ) : null
-                            )}
 
-                            {/* FOTO AVAL PERSONA */}
-                            {requireGuarantorPhoto && (
-                                (!(targetAvalClient?.avales?.[selectedAvalIndex]?.photoUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalPhotoUrl)) || avalPhotoFile || showCompletedAvalPhoto || !onlyShowPending) ? (
-                                    <div className={`border-2 border-dashed rounded-3xl p-3 text-center transition-all ${(!(targetAvalClient?.avales?.[selectedAvalIndex]?.photoUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalPhotoUrl)) || avalPhotoFile || showCompletedAvalPhoto) ? 'border-slate-100 bg-slate-50/50' : 'border-emerald-200 bg-emerald-50/30 opacity-60'}`}>
-                                        {(!(targetAvalClient?.avales?.[selectedAvalIndex]?.photoUrl || (selectedAvalIndex === 0 && targetAvalClient?.avalPhotoUrl)) || avalPhotoFile || showCompletedAvalPhoto) ? (
-                                            <>
-                                                {!avalPhotoPreview ? (
-                                                    <div onClick={() => guarantorPhotoInputRef.current?.click()} className="cursor-pointer py-6 space-y-2">
-                                                        <User className="w-8 h-8 text-blue-500 mx-auto opacity-80" />
-                                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-tight">Foto Aval (Opcional)</p>
-                                                    </div>
-                                                ) : (
-                                                    <div className="relative">
-                                                        <img src={avalPhotoPreview} className="h-32 w-full object-cover rounded-2xl shadow-md" />
-                                                        <button onClick={() => { setAvalPhotoFile(null); setAvalPhotoPreview(null); }} className="absolute -top-1.5 -right-1.5 bg-red-500 text-white p-1 rounded-full shadow-lg"><Trash2 className="w-3.5 h-3.5" /></button>
-                                                    </div>
-                                                )}
-                                            </>
-                                        ) : (
-                                            <div className="py-4 flex flex-col items-center justify-center gap-1">
-                                                <CheckCircle className="w-6 h-6 text-emerald-500" />
-                                                <p className="text-[8px] font-black text-emerald-600 uppercase">Aval Listo</p>
-                                                <button onClick={() => setShowCompletedAvalPhoto(true)} className="text-[7px] font-bold text-slate-400 underline uppercase mt-1">Editar</button>
+                                    {/* Tarjeta con mensaje y fondo discreto */}
+                                    <div className="relative overflow-hidden rounded-3xl border border-slate-200/90 shadow-md bg-white p-6 sm:p-8 flex flex-col items-center justify-center text-center min-h-[220px]">
+                                        {hasRouteBg && (
+                                            <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden select-none">
+                                                <img
+                                                    src={routeBg}
+                                                    alt=""
+                                                    className="w-full h-full object-cover object-center opacity-30 mix-blend-multiply"
+                                                />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-white/95 via-white/80 to-white/90"></div>
                                             </div>
                                         )}
+                                        <div className="relative z-10 max-w-sm mx-auto space-y-3">
+                                            <div className="w-12 h-12 mx-auto rounded-2xl bg-blue-100/90 text-blue-800 flex items-center justify-center shadow-xs">
+                                                <MapPin className="w-6 h-6 animate-bounce" />
+                                            </div>
+                                            <p className="text-sm sm:text-base font-extrabold text-slate-800 leading-relaxed">
+                                                Acude a su domicilio y pulsa el botón para registrar tu presencia y confirmar la visita.
+                                            </p>
+                                        </div>
                                     </div>
-                                ) : null
-                            )}
-                        </div>
 
-                        {/* FORMULARIO DE GARANTIAS DEL AVAL */}
-                        {(avalGuarantees.length < (supervisorFinanciera?.minGuaranteesForAval || 1) || showCompletedGuarantees || !onlyShowPending || !supervisorFinanciera?.requireGuaranteesForAval) ? (
-                            <div className="space-y-4 bg-slate-50 p-6 rounded-3xl border border-slate-100 animate-in slide-in-from-top-4">
-                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-l-4 border-blue-500 pl-3 flex items-center justify-between gap-2">
-                                    <div className="flex items-center gap-2">
-                                        <ShieldCheck className="w-4 h-4" /> Inventario de Garantías del Aval ({avalGuarantees.length})
+                                    {/* Botón de Confirmar Visita: Grande, Azul Fuerte Elegante */}
+                                    <button
+                                        disabled={isUploading}
+                                        onClick={handleAvalVisit}
+                                        className="w-full py-5 sm:py-6 bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 hover:from-blue-950 hover:to-indigo-950 text-white rounded-2xl font-black uppercase text-sm sm:text-base tracking-wider shadow-xl shadow-blue-900/30 flex items-center justify-center gap-3 active:scale-95 transition-all disabled:opacity-50"
+                                    >
+                                        {isUploading ? <Loader2 className="w-6 h-6 animate-spin" /> : <MapPin className="w-6 h-6" />}
+                                        CONFIRMAR DOM. AVAL
+                                    </button>
+
+                                    {/* Enlace para modificar datos más visible y grande */}
+                                    <div className="text-center pt-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setForceShowAvalInputs(true)}
+                                            className="text-xs sm:text-sm font-extrabold text-slate-500 hover:text-blue-800 underline uppercase tracking-wide transition-colors"
+                                        >
+                                            Modificar o revisar datos del aval
+                                        </button>
                                     </div>
-                                    {supervisorFinanciera?.requireGuaranteesForAval && supervisorFinanciera?.minGuaranteesForAval ? (
-                                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${avalGuarantees.length >= supervisorFinanciera.minGuaranteesForAval ? 'bg-green-100 text-green-600' : 'bg-amber-100 text-amber-600'}`}>
-                                            MÍNIMO: {supervisorFinanciera.minGuaranteesForAval}
-                                        </span>
-                                    ) : (
-                                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500">
-                                            OPCIONAL
-                                        </span>
+                                </div>
+                            );
+                        }
+
+                        // Caso: Faltan datos (o el usuario activó "Modificar datos")
+                        return (
+                            <div className="space-y-6 animate-in fade-in duration-200">
+                                <p className="text-xs text-slate-400 text-center font-bold uppercase">
+                                    REGISTRANDO DOMICILIO PARA: <span className="text-blue-600 font-black">
+                                        {avalNameDisplay}
+                                    </span>
+                                </p>
+
+                                {!isAllComplete && (
+                                    <div className="bg-amber-50 border border-amber-200 p-4 rounded-2xl flex items-start gap-3">
+                                        <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
+                                        <div>
+                                            <p className="text-xs font-black text-amber-900 uppercase">Datos Pendientes del Aval</p>
+                                            <p className="text-[10px] font-bold text-amber-700 mt-0.5">
+                                                Falta completar los siguientes datos antes de confirmar la visita:
+                                            </p>
+                                            <ul className="mt-1 space-y-0.5 text-[9px] font-black text-amber-800 uppercase">
+                                                {!hasFacadePhoto && <li>• Foto de Fachada del Aval</li>}
+                                                {!hasGuaranteesList && <li>• Garantías del Aval (Mínimo: {minGAvalReq})</li>}
+                                                {!hasGuarantorPersonPhoto && <li>• Foto del Aval (Persona)</li>}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {forceShowAvalInputs && isAllComplete && (
+                                    <div className="flex items-center justify-between bg-blue-50 border border-blue-200 p-3 rounded-2xl">
+                                        <span className="text-[10px] font-black text-blue-900 uppercase">Modo Edición Activado</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => setForceShowAvalInputs(false)}
+                                            className="px-3 py-1 bg-white border border-blue-200 rounded-xl text-[9px] font-black text-blue-700 uppercase"
+                                        >
+                                            Volver a Confirmar
+                                        </button>
+                                    </div>
+                                )}
+
+                                {/* SECCIÓN DE FOTOS: MUESTRA FOTOS EXISTENTES CON OPCIÓN DE CAMBIARLAS O CAPTURARLAS */}
+                                <div className={`grid gap-3 ${(requireGuarantorPhoto && requireGuarantorFacade) ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                                    {/* FACHADA */}
+                                    {requireGuarantorFacade && (
+                                        <div className="space-y-1.5">
+                                            <div className="flex justify-between items-center px-1">
+                                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                                    <Home className="w-3 h-3 text-blue-500" /> Fachada
+                                                </span>
+                                                {currentFacadeImg && (
+                                                    <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                                        <CheckCircle className="w-2.5 h-2.5" /> Registrada
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {currentFacadeImg ? (
+                                                <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 shadow-xs">
+                                                    <img src={currentFacadeImg} alt="Fachada Aval" className="h-32 w-full object-cover" />
+                                                    <label className="absolute bottom-2 right-2 px-2.5 py-1 bg-white/95 hover:bg-white text-blue-700 rounded-xl text-[9px] font-black uppercase shadow-md border border-blue-100 cursor-pointer flex items-center gap-1 active:scale-95 transition-all">
+                                                        <Camera className="w-3 h-3 text-blue-600" /> Cambiar
+                                                        <input
+                                                            type="file"
+                                                            accept="image/*"
+                                                            capture="environment"
+                                                            className="hidden"
+                                                            onChange={(e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (file) {
+                                                                    setFacadeFile(file);
+                                                                    const previewUrl = URL.createObjectURL(file);
+                                                                    setFacadePreview(previewUrl);
+                                                                    setAvalFacadePreview(previewUrl);
+                                                                }
+                                                            }}
+                                                        />
+                                                    </label>
+                                                </div>
+                                            ) : (
+                                                <label className="border-2 border-dashed rounded-2xl p-4 text-center border-slate-300 hover:border-blue-400 bg-slate-50/60 hover:bg-blue-50/30 cursor-pointer transition-all block">
+                                                    <Camera className="w-7 h-7 text-blue-500 mx-auto mb-1 opacity-80" />
+                                                    <p className="text-[8.5px] font-black text-slate-500 uppercase tracking-wider">Tomar Fachada</p>
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        capture="environment"
+                                                        className="hidden"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) {
+                                                                setFacadeFile(file);
+                                                                const previewUrl = URL.createObjectURL(file);
+                                                                setFacadePreview(previewUrl);
+                                                                setAvalFacadePreview(previewUrl);
+                              }
+                                                        }}
+                                                    />
+                                                </label>
+                                            )}
+                                        </div>
                                     )}
-                                </h4>
 
-                                {(avalGuarantees.length < (supervisorFinanciera?.minGuaranteesForAval || 1) || showCompletedGuarantees || !supervisorFinanciera?.requireGuaranteesForAval) ? (
-                                    <div className="flex flex-col gap-3">
+                                    {/* FOTO AVAL PERSONA */}
+                                    {requireGuarantorPhoto && (
+                                        <div className="space-y-1.5">
+                                            <div className="flex justify-between items-center px-1">
+                                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                                    <User className="w-3 h-3 text-blue-500" /> Foto Aval
+                                                </span>
+                                                {currentPhotoImg && (
+                                                    <span className="text-[8px] font-black text-emerald-600 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                                                        <CheckCircle className="w-2.5 h-2.5" /> Registrada
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {currentPhotoImg ? (
+                                                <div className="relative rounded-2xl overflow-hidden border border-slate-200 bg-slate-50 shadow-xs">
+                                                    <img src={currentPhotoImg} alt="Foto Aval Persona" className="h-32 w-full object-cover" />
+                                                    <label className="absolute bottom-2 right-2 px-2.5 py-1 bg-white/95 hover:bg-white text-blue-700 rounded-xl text-[9px] font-black uppercase shadow-md border border-blue-100 cursor-pointer flex items-center gap-1 active:scale-95 transition-all">
+                                                        <Camera className="w-3 h-3 text-blue-600" /> Cambiar
+                                                        <input
+                                                            type="file"
+                                                            accept="image/*"
+                                                            capture="environment"
+                                                            className="hidden"
+                                                            onChange={(e) => {
+                                                                const file = e.target.files?.[0];
+                                                                if (file) {
+                                                                    setAvalPhotoFile(file);
+                                                                    const previewUrl = URL.createObjectURL(file);
+                                                                    setAvalPhotoPreview(previewUrl);
+                                                                }
+                                                            }}
+                                                        />
+                                                    </label>
+                                                </div>
+                                            ) : (
+                                                <label className="border-2 border-dashed rounded-2xl p-4 text-center border-slate-300 hover:border-blue-400 bg-slate-50/60 hover:bg-blue-50/30 cursor-pointer transition-all block">
+                                                    <User className="w-7 h-7 text-blue-500 mx-auto mb-1 opacity-80" />
+                                                    <p className="text-[8.5px] font-black text-slate-500 uppercase tracking-wider">Tomar Foto Aval</p>
+                                                    <input
+                                                        type="file"
+                                                        accept="image/*"
+                                                        capture="environment"
+                                                        className="hidden"
+                                                        onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) {
+                                                                setAvalPhotoFile(file);
+                                                                const previewUrl = URL.createObjectURL(file);
+                                                                setAvalPhotoPreview(previewUrl);
+                                                            }
+                                                        }}
+                                                    />
+                                                </label>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* SECCIÓN DE GARANTÍAS: MUESTRA TODAS LAS GARANTÍAS REGISTRADAS */}
+                                <div className="space-y-4 bg-slate-50 p-5 rounded-3xl border border-slate-100 animate-in slide-in-from-top-4">
+                                    <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                                        <div className="flex items-center gap-2">
+                                            <ShieldCheck className="w-4 h-4 text-blue-600" />
+                                            <h4 className="text-[10px] font-black text-slate-700 uppercase tracking-widest">
+                                                Garantías Registradas ({avalGuarantees.length})
+                                            </h4>
+                                        </div>
+                                        <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${avalGuarantees.length >= minGAvalReq ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' : 'bg-amber-100 text-amber-700 border border-amber-200'}`}>
+                                            MÍNIMO: {minGAvalReq}
+                                        </span>
+                                    </div>
+
+                                    {/* Lista visible de garantías ya registradas */}
+                                    <div className="space-y-2">
+                                        {avalGuarantees.length === 0 ? (
+                                            <p className="text-[10px] font-bold text-slate-400 italic text-center py-2 bg-white rounded-xl border border-dashed border-slate-200">
+                                                Sin garantías registradas aún
+                                            </p>
+                                        ) : (
+                                            avalGuarantees.map((g, i) => (
+                                                <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs flex justify-between items-center">
+                                                    <div className="flex items-center gap-2.5 overflow-hidden">
+                                                        <div className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></div>
+                                                        <span className="text-xs font-black text-slate-800 uppercase truncate">
+                                                            {typeof g === 'string' ? g : g.description}
+                                                        </span>
+                                                    </div>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setAvalGuarantees(avalGuarantees.filter((_, idx) => idx !== i))}
+                                                        className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                                        title="Eliminar garantía"
+                                                    >
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+
+                                    {/* Agregar nueva garantía */}
+                                    <div className="flex gap-2 pt-1">
                                         <input
                                             type="text"
                                             value={newAvalGuarantee}
                                             onChange={e => setNewAvalGuarantee(e.target.value.toUpperCase())}
                                             onKeyDown={(e) => e.key === 'Enter' && handleAddAvalGuarantee()}
-                                            className="w-full p-4 border border-slate-200 rounded-2xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none transition-shadow uppercase text-sm"
-                                            placeholder="Ej: Moto Itallika 2024"
+                                            className="flex-1 p-3 border border-slate-200 rounded-xl font-bold text-slate-900 bg-white placeholder-slate-400 focus:ring-2 focus:ring-blue-500 outline-none uppercase text-xs"
+                                            placeholder="Agregar otra garantía (Ej: Moto, TV)"
                                         />
                                         <button
+                                            type="button"
                                             onClick={handleAddAvalGuarantee}
-                                            className="w-full py-4 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-lg shadow-blue-100 flex items-center justify-center gap-2 hover:bg-blue-700 active:scale-95 transition-all"
+                                            className="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black uppercase text-xs tracking-wider shadow-sm flex items-center gap-1 active:scale-95 transition-all flex-shrink-0"
                                         >
-                                            <Plus className="w-5 h-5" /> Agregar Garantía
+                                            <Plus className="w-4 h-4" />
                                         </button>
                                     </div>
-                                ) : (
-                                    <div className="bg-emerald-50 border border-emerald-100 rounded-2xl p-3 flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            <CheckCircle className="w-4 h-4 text-emerald-500" />
-                                            <span className="text-[10px] font-black text-emerald-900 uppercase">Mínimo de Garantías Cubierto</span>
-                                        </div>
-                                        <button
-                                            onClick={() => setShowCompletedGuarantees(true)}
-                                            className="text-[8px] font-black text-blue-600 uppercase underline"
-                                        >
-                                            AGREGAR MÁS
-                                        </button>
-                                    </div>
-                                )}
-
-                                <div className="space-y-2 mt-4">
-                                    {avalGuarantees.length === 0 && (
-                                        <p className="text-[10px] font-bold text-slate-300 italic text-center py-2">
-                                            Lista vacía (Sin garantías registradas)
-                                        </p>
-                                    )}
-                                    {avalGuarantees.map((g, i) => (
-                                        <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center animate-in slide-in-from-bottom-1">
-                                            <div className="flex items-center gap-3 overflow-hidden">
-                                                <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
-                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{g.description}</span>
-                                            </div>
-                                            <button
-                                                onClick={() => setAvalGuarantees(avalGuarantees.filter((_, idx) => idx !== i))}
-                                                className="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-100 hover:text-red-600 transition-colors"
-                                            >
-                                                <Trash2 className="w-5 h-5" />
-                                            </button>
-                                        </div>
-                                    ))}
                                 </div>
-                            </div>
-                        ) : null}
 
-                        <button
-                            disabled={isUploading}
-                            onClick={handleAvalVisit}
-                            className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black uppercase text-xs tracking-widest shadow-xl shadow-blue-100 flex items-center justify-center gap-3 disabled:opacity-50 transition-all active:scale-95"
-                        >
-                            {isUploading ? <Loader2 className="animate-spin" /> : <Check className="w-5 h-5" />}
-                            Confirmar Visita de Aval
-                        </button>
-                    </div>
+                                <button
+                                    disabled={isUploading}
+                                    onClick={handleAvalVisit}
+                                    className="w-full py-5 sm:py-6 bg-gradient-to-r from-blue-900 via-blue-800 to-indigo-900 hover:from-blue-950 hover:to-indigo-950 text-white rounded-2xl font-black uppercase text-sm sm:text-base tracking-wider shadow-xl shadow-blue-900/30 flex items-center justify-center gap-3 disabled:opacity-50 transition-all active:scale-95"
+                                >
+                                    {isUploading ? <Loader2 className="w-6 h-6 animate-spin" /> : isAlreadyConfirmed ? <CheckCircle className="w-6 h-6" /> : <MapPin className="w-6 h-6" />}
+                                    {isAlreadyConfirmed ? 'GUARDAR DATOS DEL AVAL' : 'CONFIRMAR DOM. AVAL'}
+                                </button>
+                            </div>
+                        );
+                    })()}
                 </div>
             )}
 
@@ -2878,7 +3242,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                         <div className="flex items-center justify-end pt-1 border-t border-slate-100/80">
                                                             <button
                                                                 type="button"
-                                                                onClick={() => handleSelectAvalCandidate(c.sourceClient, c.name, c.address, c.cellphone, c.facadeUrl, c.photoUrl, c.guarantees)}
+                                                                onClick={() => handleSelectAvalCandidate(c.sourceClient, c.name, c.address, c.cellphone, c.facadeUrl, c.photoUrl)}
                                                                 className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs text-center"
                                                             >
                                                                 Usar este Aval
@@ -3465,7 +3829,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                     <button
                                                         type="button"
                                                         onClick={() => {
-                                                            handleSelectAvalCandidate(c.sourceClient, c.name, c.address, c.cellphone, c.facadeUrl, c.photoUrl, c.guarantees);
+                                                            handleSelectAvalCandidate(c.sourceClient, c.name, c.address, c.cellphone, c.facadeUrl, c.photoUrl);
                                                             setFullScreenCoincidences(null);
                                                         }}
                                                         className="w-full sm:w-auto px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-black text-[10px] uppercase transition-colors shadow-2xs text-center"
@@ -3753,8 +4117,19 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                         {isSameClientRenewal ? (
                                             <button
                                                 onClick={() => {
-                                                    setAvalAddress(coincidenceAval.client.avalAddress || '');
-                                                    setAvalCellphone(coincidenceAval.client.avalCellphone || '');
+                                                    const targetName = (avalName || coincidenceAval.client.avalName || coincidenceAval.client.avales?.[0]?.name || coincidenceAval.client.name).trim();
+                                                    const clientData = resolveAvalDataFromClient(coincidenceAval.client, targetName);
+                                                    const globalData = resolveAvalContact(targetName);
+                                                    const finalAddr = clientData.address || globalData.address || (coincidenceAval.isAlreadyClient ? (coincidenceAval.client.address || '') : '') || '';
+                                                    const finalPhone = clientData.cellphone || globalData.cellphone || (coincidenceAval.isAlreadyClient ? (coincidenceAval.client.cellphone || '') : '') || '';
+
+                                                    setAvalAddress(finalAddr);
+                                                    setAvalCellphone(finalPhone);
+
+                                                    const resolvedPhotos = resolveAvalPhotos(targetName, clientData.facadeUrl, clientData.photoUrl);
+                                                    if (resolvedPhotos.facadeUrl) setAvalFacadePreview(resolvedPhotos.facadeUrl);
+                                                    if (resolvedPhotos.photoUrl) setAvalPhotoPreview(resolvedPhotos.photoUrl);
+
                                                     const currentName = removeAccents(avalName.trim().toUpperCase());
                                                     if (currentName) setIgnoredAvalNames(prev => [...prev, currentName]);
                                                     setCoincidenceAval(null);
@@ -3788,8 +4163,19 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                 </button>
                                                 <button
                                                     onClick={() => {
-                                                        setAvalAddress(coincidenceAval.client.avalAddress || '');
-                                                        setAvalCellphone(coincidenceAval.client.avalCellphone || '');
+                                                        const targetName = (avalName || coincidenceAval.client.avalName || coincidenceAval.client.avales?.[0]?.name || coincidenceAval.client.name).trim();
+                                                        const clientData = resolveAvalDataFromClient(coincidenceAval.client, targetName);
+                                                        const globalData = resolveAvalContact(targetName);
+                                                        const finalAddr = clientData.address || globalData.address || (coincidenceAval.isAlreadyClient ? (coincidenceAval.client.address || '') : '') || '';
+                                                        const finalPhone = clientData.cellphone || globalData.cellphone || (coincidenceAval.isAlreadyClient ? (coincidenceAval.client.cellphone || '') : '') || '';
+
+                                                        setAvalAddress(finalAddr);
+                                                        setAvalCellphone(finalPhone);
+
+                                                        const resolvedPhotos = resolveAvalPhotos(targetName, clientData.facadeUrl, clientData.photoUrl);
+                                                        if (resolvedPhotos.facadeUrl) setAvalFacadePreview(resolvedPhotos.facadeUrl);
+                                                        if (resolvedPhotos.photoUrl) setAvalPhotoPreview(resolvedPhotos.photoUrl);
+
                                                         const currentName = removeAccents(avalName.trim().toUpperCase());
                                                         if (currentName) setIgnoredAvalNames(prev => [...prev, currentName]);
                                                         setCoincidenceAval(null);
@@ -4425,7 +4811,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                                                                 <div className="flex items-center justify-end pt-1 border-t border-slate-100/80">
                                                                     <button
                                                                         type="button"
-                                                                        onClick={() => handleSelectAvalCandidate(c.sourceClient, c.name, c.address, c.cellphone, c.facadeUrl, c.photoUrl, c.guarantees)}
+                                                                        onClick={() => handleSelectAvalCandidate(c.sourceClient, c.name, c.address, c.cellphone, c.facadeUrl, c.photoUrl)}
                                                                         className="w-full sm:w-auto px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-[10px] uppercase transition-colors shadow-xs text-center"
                                                                     >
                                                                         Usar este Aval

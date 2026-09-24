@@ -1,9 +1,10 @@
-const CACHE_NAME = 'visor-app-v6.02';
+const CACHE_NAME = 'visor-app-v7.02';
 const urlsToCache = [
   '/',
   '/index.html',
   '/index.css',
-  '/manifest.json'
+  '/manifest.json',
+  '/route-map-visit.png'
 ];
 
 self.addEventListener('install', (event) => {

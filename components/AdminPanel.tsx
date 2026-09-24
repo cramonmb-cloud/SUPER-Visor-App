@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { Supervisor, Client, Visit, QRCodeBatch, AppState, SystemUser, RegistrationRules, DeviceMetadata, WorkWeek, Guarantee, Financiera, UserRole, GuarantorRange, Guarantor, ApiPermission, ApiKey } from '../types';
-import { Users, User, QrCode, MapPin, Plus, RefreshCw, Trash2, Printer, FileText, Settings, Save, Archive, Camera, Shield, UserPlus, UserCheck, Pencil, X, Map as MapIcon, Filter, Eye, ImageIcon, Globe, Home, Calendar, PlayCircle, StopCircle, Clock, CheckCircle, Palette, Info, Monitor, Cpu, HardDrive, Smartphone, AlertTriangle, ArrowRight, ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, DollarSign, Download, FileJson, Hash, Loader2, Image as ImageIconLucide, Zap, Activity, History, UserCog, CheckSquare, Square, Search, RotateCcw, Terminal, Key, Fingerprint, ChevronLeft, ChevronRight, Building2, LayoutGrid, Sparkles, UserMinus, Unlink } from 'lucide-react';
+import { Users, User, QrCode, MapPin, Plus, RefreshCw, Trash2, Printer, FileText, Settings, Save, Archive, Camera, Shield, UserPlus, UserCheck, Pencil, X, Map as MapIcon, Filter, Eye, ImageIcon, Globe, Home, Calendar, PlayCircle, StopCircle, Clock, CheckCircle, Palette, Info, Monitor, Cpu, HardDrive, Smartphone, AlertTriangle, ArrowRight, ShieldCheck, ShieldAlert, ChevronDown, ChevronUp, DollarSign, Download, FileJson, Hash, Loader2, Image as ImageIconLucide, Zap, Activity, History, UserCog, CheckSquare, Square, Search, RotateCcw, Terminal, Key, Fingerprint, ChevronLeft, ChevronRight, Building2, LayoutGrid, Sparkles, UserMinus, Unlink, Upload } from 'lucide-react';
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
 import QRCode from "qrcode";
@@ -22,7 +22,7 @@ interface AdminPanelProps {
   onUpdateSupervisor: (id: string, name: string, pin: string, canEditClients: boolean, canArchiveClients: boolean, canEditPhotos: boolean, financieraId: string, birthDay?: number, birthMonth?: number) => void;
   onGenerateQR: (count: number, prefix: string, financieraId: string) => void;
   onDeleteSupervisor: (id: string) => void;
-  onUpdateSettings: (prefix: string, nextSeq: string, appName: string, rules?: RegistrationRules, verName?: string, verColor?: string, logoUrl?: string, designVersion?: 'v1' | 'v2', logoGifUrl?: string, footerLogoUrl?: string, footerInfoHtml?: string, birthdayPetUrl?: string, birthdayDurationSeconds?: number) => void;
+  onUpdateSettings: (prefix: string, nextSeq: string, appName: string, rules?: RegistrationRules, verName?: string, verColor?: string, logoUrl?: string, designVersion?: 'v1' | 'v2', logoGifUrl?: string, footerLogoUrl?: string, footerInfoHtml?: string, birthdayPetUrl?: string, birthdayDurationSeconds?: number, avalRouteBgUrl?: string) => void;
   onUpdateClient: (clientId: string, data: Partial<Client>) => void;
   onDeleteClient: (clientId: string) => void;
   onFetchClient: (clientId: string) => Promise<Client | null>;
@@ -184,6 +184,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [footerInfoHtml, setFooterInfoHtml] = useState(data.settings?.footerInfoHtml || '');
   const [birthdayPetUrl, setBirthdayPetUrl] = useState(data.settings?.birthdayPetUrl || '');
   const [birthdayDurationSeconds, setBirthdayDurationSeconds] = useState<number>(data.settings?.birthdayDurationSeconds ?? 5);
+  const [avalRouteBgUrl, setAvalRouteBgUrl] = useState(data.settings?.avalRouteBgUrl !== undefined ? data.settings.avalRouteBgUrl : '/route-map-visit.png');
   const [designVersion, setDesignVersion] = useState<'v1' | 'v2'>(data.settings?.adminDesignVersion || 'v1');
   const [reqFacade, setReqFacade] = useState(data.settings?.registrationRules?.requireFacade ?? true);
   const [minGuarantees, setMinGuarantees] = useState(data.settings?.registrationRules?.minGuarantees ?? (data.settings?.registrationRules?.requireGuarantee ? 1 : 0));
@@ -790,13 +791,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
         setFooterInfoHtml(data.settings.footerInfoHtml || '');
         setBirthdayPetUrl(data.settings.birthdayPetUrl || '');
         setBirthdayDurationSeconds(data.settings.birthdayDurationSeconds ?? 5);
+        setAvalRouteBgUrl(data.settings.avalRouteBgUrl !== undefined ? data.settings.avalRouteBgUrl : '/route-map-visit.png');
         setReqFacade(data.settings.registrationRules?.requireFacade ?? true);
         setMinGuarantees(data.settings.registrationRules?.minGuarantees ?? (data.settings.registrationRules?.requireGuarantee ? 1 : 0));
     }
   }, [data.settings]);
 
   const handleSaveSettings = () => {
-    onUpdateSettings(prefix, sequence, appName, { requireFacade: reqFacade, requireGuarantee: minGuarantees > 0, minGuarantees }, `v${VERSION}`, versionColor, logoUrl, designVersion, logoGifUrl, footerLogoUrl, footerInfoHtml, birthdayPetUrl, birthdayDurationSeconds);
+    onUpdateSettings(prefix, sequence, appName, { requireFacade: reqFacade, requireGuarantee: minGuarantees > 0, minGuarantees }, `v${VERSION}`, versionColor, logoUrl, designVersion, logoGifUrl, footerLogoUrl, footerInfoHtml, birthdayPetUrl, birthdayDurationSeconds, avalRouteBgUrl);
     alert("Ajustes globales actualizados. La PWA se actualizará en unos instantes.");
   };
 
@@ -3348,6 +3350,83 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                             placeholder="5" 
                                                             className="w-full p-4 bg-indigo-50/40 border border-indigo-100 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs text-center" 
                                                         />
+                                                    </div>
+                                                </div>
+
+                                                <div className="pt-4 border-t border-slate-100 space-y-3">
+                                                    <div className="flex justify-between items-center">
+                                                        <div>
+                                                            <h4 className="text-[10px] font-black text-slate-800 uppercase tracking-widest px-1 flex items-center gap-1.5">
+                                                                <MapPin className="w-3.5 h-3.5 text-blue-600" /> Imagen de Fondo - Visita de Aval
+                                                            </h4>
+                                                            <p className="text-[9px] font-bold text-slate-400 uppercase px-1">
+                                                                Fondo sutil en la pantalla de confirmación domiciliaria del aval
+                                                            </p>
+                                                        </div>
+                                                        {avalRouteBgUrl && avalRouteBgUrl !== 'none' && (
+                                                            <span className="text-[8px] font-black px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full border border-emerald-200 uppercase">
+                                                                Activa
+                                                            </span>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="space-y-2">
+                                                        <input 
+                                                            type="text" 
+                                                            value={avalRouteBgUrl === 'none' ? '' : avalRouteBgUrl} 
+                                                            onChange={e => setAvalRouteBgUrl(e.target.value)} 
+                                                            placeholder="URL de imagen (o dejar vacío / 'none' para quitar)" 
+                                                            className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all text-xs" 
+                                                        />
+
+                                                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                                                            <label className="cursor-pointer px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-[9px] font-black uppercase transition-all flex items-center gap-1.5 border border-indigo-100">
+                                                                <Upload className="w-3 h-3" /> Subir Imagen
+                                                                <input 
+                                                                    type="file" 
+                                                                    accept="image/*" 
+                                                                    className="hidden" 
+                                                                    onChange={(e) => {
+                                                                        const file = e.target.files?.[0];
+                                                                        if (file) {
+                                                                            const reader = new FileReader();
+                                                                            reader.onload = () => {
+                                                                                if (typeof reader.result === 'string') {
+                                                                                    setAvalRouteBgUrl(reader.result);
+                                                                                }
+                                                                            };
+                                                                            reader.readAsDataURL(file);
+                                                                        }
+                                                                    }} 
+                                                                />
+                                                            </label>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setAvalRouteBgUrl('/route-map-visit.png')}
+                                                                className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-[9px] font-black uppercase transition-all border border-blue-100"
+                                                            >
+                                                                Ruta por Defecto
+                                                            </button>
+
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setAvalRouteBgUrl('none')}
+                                                                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-[9px] font-black uppercase transition-all border border-rose-100"
+                                                            >
+                                                                Quitar Imagen
+                                                            </button>
+                                                        </div>
+
+                                                        {avalRouteBgUrl && avalRouteBgUrl !== 'none' && (
+                                                            <div className="mt-2 p-2 bg-slate-50 rounded-xl border border-slate-100 flex items-center gap-3">
+                                                                <img src={avalRouteBgUrl} alt="Preview Fondo" className="w-16 h-12 object-cover rounded-lg border border-slate-200" />
+                                                                <div className="min-w-0 flex-1">
+                                                                    <p className="text-[9px] font-black text-slate-700 uppercase truncate">Vista previa del fondo</p>
+                                                                    <p className="text-[8px] font-bold text-slate-400 truncate">Se mostrará sutilmente de fondo en la visita del aval</p>
+                                                                </div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>

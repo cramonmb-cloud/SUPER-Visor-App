@@ -44,7 +44,8 @@ const INITIAL_STATE: AppState = {
       versionColor: '#4f46e5',
       registrationRules: { requireFacade: true, requireGuarantee: true },
       footerLogoUrl: '',
-      footerInfoHtml: ''
+      footerInfoHtml: '',
+      avalRouteBgUrl: '/route-map-visit.png'
   },
   systemUsers: [],
   weeks: [],
@@ -632,7 +633,8 @@ const App: React.FC = () => {
     footerLogoUrl?: string, 
     footerInfoHtml?: string, 
     birthdayPetUrl?: string, 
-    birthdayDurationSeconds?: number
+    birthdayDurationSeconds?: number,
+    avalRouteBgUrl?: string
   ) => { 
     if (typeof prefixOrSettings === 'object') {
       await setDoc(doc(db, 'settings', 'global'), prefixOrSettings, { merge: true });
@@ -654,6 +656,7 @@ const App: React.FC = () => {
     if (footerInfoHtml !== undefined) payload.footerInfoHtml = footerInfoHtml;
     if (birthdayPetUrl !== undefined) payload.birthdayPetUrl = birthdayPetUrl;
     if (birthdayDurationSeconds !== undefined) payload.birthdayDurationSeconds = birthdayDurationSeconds;
+    if (avalRouteBgUrl !== undefined) payload.avalRouteBgUrl = avalRouteBgUrl;
 
     await setDoc(doc(db, 'settings', 'global'), payload, { merge: true }); 
   };
