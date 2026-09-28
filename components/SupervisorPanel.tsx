@@ -6,7 +6,7 @@ import { storage, db } from '../services/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { query, collection, where, getDocs, limit } from 'firebase/firestore';
 import { CachedImage } from './CachedImage';
-import { checkClientCompleteness } from './AdminPanel';
+import { checkClientCompleteness, countEffectiveGuarantees, normalizeGuarantees } from './AdminPanel';
 import { removeAccents, getClientLoanCycle, ClientLoanCycle } from '../constants';
 import jsQR from 'jsqr';
 
@@ -409,19 +409,37 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
     const handleAddAval1Guarantee = () => {
         if (newAval1Guarantee.trim()) {
-            setAval1Guarantees([...aval1Guarantees, newAval1Guarantee.trim().toUpperCase()]);
+            const items = newAval1Guarantee.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
+            if (items.length > 1) {
+                const unique = items.filter(it => !aval1Guarantees.includes(it));
+                setAval1Guarantees([...aval1Guarantees, ...unique]);
+            } else {
+                setAval1Guarantees([...aval1Guarantees, newAval1Guarantee.trim().toUpperCase()]);
+            }
             setNewAval1Guarantee('');
         }
     };
     const handleAddAval2Guarantee = () => {
         if (newAval2Guarantee.trim()) {
-            setAval2Guarantees([...aval2Guarantees, newAval2Guarantee.trim().toUpperCase()]);
+            const items = newAval2Guarantee.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
+            if (items.length > 1) {
+                const unique = items.filter(it => !aval2Guarantees.includes(it));
+                setAval2Guarantees([...aval2Guarantees, ...unique]);
+            } else {
+                setAval2Guarantees([...aval2Guarantees, newAval2Guarantee.trim().toUpperCase()]);
+            }
             setNewAval2Guarantee('');
         }
     };
     const handleAddAval3Guarantee = () => {
         if (newAval3Guarantee.trim()) {
-            setAval3Guarantees([...aval3Guarantees, newAval3Guarantee.trim().toUpperCase()]);
+            const items = newAval3Guarantee.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
+            if (items.length > 1) {
+                const unique = items.filter(it => !aval3Guarantees.includes(it));
+                setAval3Guarantees([...aval3Guarantees, ...unique]);
+            } else {
+                setAval3Guarantees([...aval3Guarantees, newAval3Guarantee.trim().toUpperCase()]);
+            }
             setNewAval3Guarantee('');
         }
     };
@@ -488,9 +506,11 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         if (cellphone.trim().length >= 10) filled++;
 
         // Guarantees
-        total += 1;
-        const minG = Math.max(1, supervisorFinanciera?.minGuarantees ?? settings.registrationRules?.minGuarantees ?? (settings.registrationRules?.requireGuarantee ? 1 : 0));
-        if (guarantees.length >= minG || (newGuarantee.trim() && (guarantees.length + 1) >= minG)) filled++;
+        if (minGuarantees > 0) {
+            total += 1;
+            const currentTotal = countEffectiveGuarantees(guarantees) + (newGuarantee.trim() ? countEffectiveGuarantees([newGuarantee.trim()]) : 0);
+            if (currentTotal >= minGuarantees) filled++;
+        }
 
         // Photos
         if (requireFacade) {
@@ -502,20 +522,24 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             if (clientPhotoFile || clientPhotoPreview) filled++;
         }
 
-        return Math.round((filled / total) * 100);
+        return total > 0 ? Math.round((filled / total) * 100) : 0;
     };
 
     const getAvalFormProgress = () => {
         let total = 0;
         let filled = 0;
-        const minGAval = Math.max(1, supervisorFinanciera?.minGuaranteesForAval ?? 1);
+        const minGAval = supervisorFinanciera?.minGuaranteesForAval ?? (supervisorFinanciera?.requireGuaranteesForAval ? 1 : 0);
 
         // Aval 1
-        total += 4;
+        total += 3;
         if (avalName.trim()) filled++;
         if (avalAddress.trim()) filled++;
         if (avalCellphone.trim().length >= 10) filled++;
-        if (aval1Guarantees.length >= minGAval || (newAval1Guarantee.trim() && (aval1Guarantees.length + 1) >= minGAval)) filled++;
+        if (minGAval > 0) {
+            total += 1;
+            const curAval1G = countEffectiveGuarantees(aval1Guarantees) + (newAval1Guarantee.trim() ? countEffectiveGuarantees([newAval1Guarantee.trim()]) : 0);
+            if (curAval1G >= minGAval) filled++;
+        }
 
         if (requireGuarantorFacade) {
             total++;
@@ -528,11 +552,15 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
         // Aval 2
         if (requiredAvales >= 2) {
-            total += 4;
+            total += 3;
             if (aval2Name.trim()) filled++;
             if (aval2Address.trim()) filled++;
             if (aval2Cellphone.trim().length >= 10) filled++;
-            if (aval2Guarantees.length >= minGAval || (newAval2Guarantee.trim() && (aval2Guarantees.length + 1) >= minGAval)) filled++;
+            if (minGAval > 0) {
+                total += 1;
+                const curAval2G = countEffectiveGuarantees(aval2Guarantees) + (newAval2Guarantee.trim() ? countEffectiveGuarantees([newAval2Guarantee.trim()]) : 0);
+                if (curAval2G >= minGAval) filled++;
+            }
 
             if (requireGuarantorFacade) {
                 total++;
@@ -546,11 +574,15 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
         // Aval 3
         if (requiredAvales >= 3) {
-            total += 4;
+            total += 3;
             if (aval3Name.trim()) filled++;
             if (aval3Address.trim()) filled++;
             if (aval3Cellphone.trim().length >= 10) filled++;
-            if (aval3Guarantees.length >= minGAval || (newAval3Guarantee.trim() && (aval3Guarantees.length + 1) >= minGAval)) filled++;
+            if (minGAval > 0) {
+                total += 1;
+                const curAval3G = countEffectiveGuarantees(aval3Guarantees) + (newAval3Guarantee.trim() ? countEffectiveGuarantees([newAval3Guarantee.trim()]) : 0);
+                if (curAval3G >= minGAval) filled++;
+            }
 
             if (requireGuarantorFacade) {
                 total++;
@@ -573,27 +605,36 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         if (Number(client.creditAmount) > 0) filled++;
         if (client.cellphone?.trim().length >= 10) filled++;
 
-        const minG = Math.max(1, supervisorFinanciera?.minGuarantees ?? settings.registrationRules?.minGuarantees ?? (settings.registrationRules?.requireGuarantee ? 1 : 0));
-        total += 1;
-        if ((client.guarantees?.length || 0) >= minG) filled++;
+        const clientFin = financieras.find(f => f.id === client.financieraId) || supervisorFinanciera;
+        const minG = clientFin?.minGuarantees ?? settings.registrationRules?.minGuarantees ?? (settings.registrationRules?.requireGuarantee ? 1 : 0);
+        if (minG > 0) {
+            total += 1;
+            if (countEffectiveGuarantees(client.guarantees) >= minG) filled++;
+        }
 
-        if (requireFacade) {
+        const reqFacade = clientFin?.requireFacade ?? requireFacade;
+        if (reqFacade) {
             total++;
             if (client.facadeUrl) filled++;
         }
-        if (requireClientPhoto) {
+        const reqClientPhoto = clientFin?.requireClientPhoto ?? requireClientPhoto;
+        if (reqClientPhoto) {
             total++;
             if (client.clientPhotoUrl) filled++;
         }
 
-        return Math.round((filled / total) * 100);
+        return total > 0 ? Math.round((filled / total) * 100) : 0;
     };
 
     const getAvalDetailProgress = (client: any) => {
         let total = 0;
         let filled = 0;
 
-        const minGAval = Math.max(1, supervisorFinanciera?.minGuaranteesForAval ?? 1);
+        const clientFin = financieras.find(f => f.id === client.financieraId) || supervisorFinanciera;
+        const minGAval = clientFin?.minGuaranteesForAval ?? (clientFin?.requireGuaranteesForAval ? 1 : 0);
+        const reqGuarantorFacade = clientFin?.requireGuarantorFacade ?? requireGuarantorFacade;
+        const reqGuarantorPhoto = clientFin?.requireGuarantorPhoto ?? requireGuarantorPhoto;
+
         const list = client.avales && client.avales.length > 0
             ? client.avales
             : [{
@@ -608,11 +649,11 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         // Determine required avales based on client creditAmount
         const amt = Number(client.creditAmount || 0);
         let reqAvals = 1;
-        if (supervisorFinanciera?.guarantorRules && supervisorFinanciera.guarantorRules.length > 0) {
-            const match = supervisorFinanciera.guarantorRules.find(r => amt >= r.minAmount && amt <= r.maxAmount);
+        if (clientFin?.guarantorRules && clientFin.guarantorRules.length > 0) {
+            const match = clientFin.guarantorRules.find(r => amt >= r.minAmount && amt <= r.maxAmount);
             if (match) reqAvals = match.requiredGuarantors;
             else {
-                const sortedRules = [...supervisorFinanciera.guarantorRules].sort((a, b) => b.minAmount - a.minAmount);
+                const sortedRules = [...clientFin.guarantorRules].sort((a, b) => b.minAmount - a.minAmount);
                 if (amt > sortedRules[0].maxAmount) {
                     reqAvals = sortedRules[0].requiredGuarantors;
                 }
@@ -620,20 +661,23 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         }
 
         list.slice(0, reqAvals).forEach((av: any, idx: number) => {
-            total += 4;
+            total += 3;
             if (av.name?.trim()) filled++;
             if (av.address?.trim()) filled++;
             if (av.cellphone?.trim().length >= 10) filled++;
-            if ((av.guarantees?.length || 0) >= minGAval) filled++;
+            if (minGAval > 0) {
+                total += 1;
+                if (countEffectiveGuarantees(av.guarantees) >= minGAval) filled++;
+            }
 
             // Fachada requerida para CADA aval
-            if (requireGuarantorFacade) {
+            if (reqGuarantorFacade) {
                 total++;
                 const resolved = resolveAvalPhotos(av.name, (idx === 0 ? (av.facadeUrl || client.avalFacadeUrl) : av.facadeUrl), (idx === 0 ? (av.photoUrl || client.avalPhotoUrl) : av.photoUrl));
                 const facade = resolved.facadeUrl;
                 if (facade) filled++;
             }
-            if (requireGuarantorPhoto) {
+            if (reqGuarantorPhoto) {
                 total++;
                 const resolved = resolveAvalPhotos(av.name, (idx === 0 ? (av.facadeUrl || client.avalFacadeUrl) : av.facadeUrl), (idx === 0 ? (av.photoUrl || client.avalPhotoUrl) : av.photoUrl));
                 const photo = resolved.photoUrl;
@@ -643,7 +687,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
         // If list length is less than required, add the missing ones to the total
         if (list.length < reqAvals) {
-            total += (reqAvals - list.length) * (4 + (requireGuarantorFacade ? 1 : 0) + (requireGuarantorPhoto ? 1 : 0));
+            total += (reqAvals - list.length) * (3 + (minGAval > 0 ? 1 : 0) + (reqGuarantorFacade ? 1 : 0) + (reqGuarantorPhoto ? 1 : 0));
         }
 
         return total > 0 ? Math.round((filled / total) * 100) : 0;
@@ -1192,22 +1236,30 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             const finalAval3FacadeUrl = aval3FacadeUrl || resolvedAval3.facadeUrl || '';
             const finalAval3PhotoUrl = aval3PhotoUrl || resolvedAval3.photoUrl || '';
 
-            const finalAval1Guarantees = [...aval1Guarantees];
-            if (newAval1Guarantee.trim() && !finalAval1Guarantees.some(g => g.toUpperCase() === newAval1Guarantee.trim().toUpperCase())) {
-                finalAval1Guarantees.push(newAval1Guarantee.trim().toUpperCase());
-            }
-            const finalAval2Guarantees = [...aval2Guarantees];
-            if (newAval2Guarantee.trim() && !finalAval2Guarantees.some(g => g.toUpperCase() === newAval2Guarantee.trim().toUpperCase())) {
-                finalAval2Guarantees.push(newAval2Guarantee.trim().toUpperCase());
-            }
-            const finalAval3Guarantees = [...aval3Guarantees];
-            if (newAval3Guarantee.trim() && !finalAval3Guarantees.some(g => g.toUpperCase() === newAval3Guarantee.trim().toUpperCase())) {
-                finalAval3Guarantees.push(newAval3Guarantee.trim().toUpperCase());
-            }
-            const finalClientGuarantees = [...guarantees];
-            if (newGuarantee.trim() && !finalClientGuarantees.some(g => g.toUpperCase() === newGuarantee.trim().toUpperCase())) {
-                finalClientGuarantees.push(newGuarantee.trim().toUpperCase());
-            }
+            const normalizeGuaranteeList = (list: string[], pending?: string): string[] => {
+                const raw = [...list];
+                if (pending && pending.trim()) {
+                    raw.push(pending.trim());
+                }
+                const result: string[] = [];
+                raw.forEach(item => {
+                    const parts = item.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
+                    if (parts.length > 1) {
+                        parts.forEach(p => {
+                            if (!result.includes(p)) result.push(p);
+                        });
+                    } else {
+                        const clean = item.trim().toUpperCase();
+                        if (clean && !result.includes(clean)) result.push(clean);
+                    }
+                });
+                return result;
+            };
+
+            const finalAval1Guarantees = normalizeGuaranteeList(aval1Guarantees, newAval1Guarantee);
+            const finalAval2Guarantees = normalizeGuaranteeList(aval2Guarantees, newAval2Guarantee);
+            const finalAval3Guarantees = normalizeGuaranteeList(aval3Guarantees, newAval3Guarantee);
+            const finalClientGuarantees = normalizeGuaranteeList(guarantees, newGuarantee);
 
             const currentAvales: Guarantor[] = [
                 {
@@ -1408,22 +1460,30 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 }
             }
 
-            const finalAval1Guarantees = [...aval1Guarantees];
-            if (newAval1Guarantee.trim() && !finalAval1Guarantees.some(g => g.toUpperCase() === newAval1Guarantee.trim().toUpperCase())) {
-                finalAval1Guarantees.push(newAval1Guarantee.trim().toUpperCase());
-            }
-            const finalAval2Guarantees = [...aval2Guarantees];
-            if (newAval2Guarantee.trim() && !finalAval2Guarantees.some(g => g.toUpperCase() === newAval2Guarantee.trim().toUpperCase())) {
-                finalAval2Guarantees.push(newAval2Guarantee.trim().toUpperCase());
-            }
-            const finalAval3Guarantees = [...aval3Guarantees];
-            if (newAval3Guarantee.trim() && !finalAval3Guarantees.some(g => g.toUpperCase() === newAval3Guarantee.trim().toUpperCase())) {
-                finalAval3Guarantees.push(newAval3Guarantee.trim().toUpperCase());
-            }
-            const finalClientGuarantees = [...guarantees];
-            if (newGuarantee.trim() && !finalClientGuarantees.some(g => g.toUpperCase() === newGuarantee.trim().toUpperCase())) {
-                finalClientGuarantees.push(newGuarantee.trim().toUpperCase());
-            }
+            const normalizeGuaranteeList = (list: string[], pending?: string): string[] => {
+                const raw = [...list];
+                if (pending && pending.trim()) {
+                    raw.push(pending.trim());
+                }
+                const result: string[] = [];
+                raw.forEach(item => {
+                    const parts = item.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
+                    if (parts.length > 1) {
+                        parts.forEach(p => {
+                            if (!result.includes(p)) result.push(p);
+                        });
+                    } else {
+                        const clean = item.trim().toUpperCase();
+                        if (clean && !result.includes(clean)) result.push(clean);
+                    }
+                });
+                return result;
+            };
+
+            const finalAval1Guarantees = normalizeGuaranteeList(aval1Guarantees, newAval1Guarantee);
+            const finalAval2Guarantees = normalizeGuaranteeList(aval2Guarantees, newAval2Guarantee);
+            const finalAval3Guarantees = normalizeGuaranteeList(aval3Guarantees, newAval3Guarantee);
+            const finalClientGuarantees = normalizeGuaranteeList(guarantees, newGuarantee);
 
             const currentAvales: Guarantor[] = [
                 {
@@ -1583,14 +1643,28 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
     // Helper para agregar garantía de aval
     const handleAddAvalGuarantee = () => {
         if (!newAvalGuarantee.trim()) return;
-        setAvalGuarantees([...avalGuarantees, { description: newAvalGuarantee.trim().toUpperCase() }]);
+        const items = newAvalGuarantee.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
+        if (items.length > 1) {
+            const newItems = items
+                .filter(it => !avalGuarantees.some(g => g.description.toUpperCase() === it))
+                .map(it => ({ description: it }));
+            setAvalGuarantees([...avalGuarantees, ...newItems]);
+        } else {
+            setAvalGuarantees([...avalGuarantees, { description: newAvalGuarantee.trim().toUpperCase() }]);
+        }
         setNewAvalGuarantee('');
     };
 
     // Helper para agregar garantía
     const handleAddGuarantee = () => {
         if (!newGuarantee.trim()) return;
-        setGuarantees([...guarantees, newGuarantee.trim().toUpperCase()]);
+        const items = newGuarantee.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
+        if (items.length > 1) {
+            const unique = items.filter(it => !guarantees.includes(it));
+            setGuarantees([...guarantees, ...unique]);
+        } else {
+            setGuarantees([...guarantees, newGuarantee.trim().toUpperCase()]);
+        }
         setNewGuarantee('');
     };
 
@@ -5166,7 +5240,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
                                     {/* Inventory Section */}
                                     <div className="space-y-1">
-                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 px-1"><Package className="w-2.5 h-2.5 text-green-500" /> Garantías ({selectedClientHistory.guarantees?.length || 0})</p>
+                                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 px-1"><Package className="w-2.5 h-2.5 text-green-500" /> Garantías ({countEffectiveGuarantees(selectedClientHistory.guarantees)})</p>
                                         <div className="flex flex-wrap gap-1.5">
                                             {selectedClientHistory.guarantees?.length === 0 ? (
                                                 <span className="text-[9px] text-slate-400 italic px-1">Sin garantías</span>
@@ -5345,7 +5419,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
                                                 {/* Aval Guarantees */}
                                                 <div className="space-y-1">
-                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 px-1"><Package className="w-2.5 h-2.5 text-green-500" /> Garantías ({aval.guarantees?.length || 0})</p>
+                                                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 px-1"><Package className="w-2.5 h-2.5 text-green-500" /> Garantías ({countEffectiveGuarantees(aval.guarantees)})</p>
                                                     <div className="flex flex-wrap gap-1.5">
                                                         {!aval.guarantees || aval.guarantees.length === 0 ? (
                                                             <span className="text-[9px] text-slate-400 italic px-1">Sin garantías</span>

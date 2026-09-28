@@ -67,6 +67,39 @@ export interface CheckClientCompletionResult {
     missing: string[];
 }
 
+export const countEffectiveGuarantees = (guarantees?: (Guarantee | { description: string } | string)[]): number => {
+    if (!guarantees || guarantees.length === 0) return 0;
+    return guarantees.reduce((sum, item) => {
+        const desc = typeof item === 'string' ? item : item.description;
+        if (!desc || !desc.trim()) return sum;
+        const subItems = desc.split(/[,;\n]+/).map(s => s.trim()).filter(s => s.length >= 2);
+        return sum + Math.max(1, subItems.length);
+    }, 0);
+};
+
+export const normalizeGuarantees = (guarantees?: (Guarantee | { description: string } | string)[]): Guarantee[] => {
+    if (!guarantees || guarantees.length === 0) return [];
+    const result: Guarantee[] = [];
+    guarantees.forEach(item => {
+        const desc = typeof item === 'string' ? item : item.description;
+        if (!desc || !desc.trim()) return;
+        const parts = desc.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
+        if (parts.length <= 1) {
+            const clean = desc.trim().toUpperCase();
+            if (!result.some(r => r.description === clean)) {
+                result.push({ description: clean });
+            }
+        } else {
+            parts.forEach(p => {
+                if (!result.some(r => r.description === p)) {
+                    result.push({ description: p });
+                }
+            });
+        }
+    });
+    return result;
+};
+
 export const checkClientCompleteness = (client: Client, financiera?: Financiera): CheckClientCompletionResult => {
     if (client.isManuallyApproved) {
         return {
@@ -85,7 +118,7 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
     
     // Check Client Guarantees
     const minGuarantees = financiera?.minGuarantees ?? 0;
-    if (minGuarantees > 0 && (!client.guarantees || client.guarantees.length < minGuarantees)) {
+    if (minGuarantees > 0 && countEffectiveGuarantees(client.guarantees) < minGuarantees) {
         missing.push(`Garantías Cliente (Mínimo: ${minGuarantees})`);
     }
 
@@ -122,7 +155,7 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
                 if (financiera?.requireGuarantorFacade !== false && !g.facadeUrl) {
                     missing.push(`Fachada Aval ${i+1}`);
                 }
-                if (reqAvalGuarantees && minGuaranteesForAval > 0 && (!g.guarantees || g.guarantees.length < minGuaranteesForAval)) {
+                if (reqAvalGuarantees && minGuaranteesForAval > 0 && countEffectiveGuarantees(g.guarantees) < minGuaranteesForAval) {
                     missing.push(`Garantías Aval ${i+1} (Mínimo: ${minGuaranteesForAval})`);
                 }
             });
@@ -134,7 +167,7 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
             if (financiera?.requireGuarantorFacade !== false && !client.avalFacadeUrl && !client.avalVisitTimestamp) {
                  missing.push(`Fachada Aval Principal`);
             }
-            if (reqAvalGuarantees && minGuaranteesForAval > 0 && (!client.avales?.[0]?.guarantees || client.avales[0].guarantees.length < minGuaranteesForAval)) {
+            if (reqAvalGuarantees && minGuaranteesForAval > 0 && countEffectiveGuarantees(client.avales?.[0]?.guarantees) < minGuaranteesForAval) {
                  missing.push(`Garantías Aval Principal (Mínimo: ${minGuaranteesForAval})`);
             }
         }

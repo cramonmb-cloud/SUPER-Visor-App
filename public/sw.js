@@ -1,4 +1,4 @@
-const CACHE_NAME = 'visor-app-v7.02';
+const CACHE_NAME = 'visor-app-v7.12';
 const urlsToCache = [
   '/',
   '/index.html',
