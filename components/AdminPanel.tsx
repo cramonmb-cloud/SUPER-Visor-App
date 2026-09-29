@@ -67,22 +67,24 @@ export interface CheckClientCompletionResult {
     missing: string[];
 }
 
-export const countEffectiveGuarantees = (guarantees?: (Guarantee | { description: string } | string)[]): number => {
-    if (!guarantees || guarantees.length === 0) return 0;
+export const countEffectiveGuarantees = (guarantees?: (Guarantee | { description: string } | string | null | undefined)[]): number => {
+    if (!guarantees || !Array.isArray(guarantees) || guarantees.length === 0) return 0;
     return guarantees.reduce((sum, item) => {
-        const desc = typeof item === 'string' ? item : item.description;
-        if (!desc || !desc.trim()) return sum;
+        if (!item) return sum;
+        const desc = typeof item === 'string' ? item : (typeof item === 'object' && 'description' in item ? item.description : '');
+        if (!desc || typeof desc !== 'string' || !desc.trim()) return sum;
         const subItems = desc.split(/[,;\n]+/).map(s => s.trim()).filter(s => s.length >= 2);
         return sum + Math.max(1, subItems.length);
     }, 0);
 };
 
-export const normalizeGuarantees = (guarantees?: (Guarantee | { description: string } | string)[]): Guarantee[] => {
-    if (!guarantees || guarantees.length === 0) return [];
+export const normalizeGuarantees = (guarantees?: (Guarantee | { description: string } | string | null | undefined)[]): Guarantee[] => {
+    if (!guarantees || !Array.isArray(guarantees) || guarantees.length === 0) return [];
     const result: Guarantee[] = [];
     guarantees.forEach(item => {
-        const desc = typeof item === 'string' ? item : item.description;
-        if (!desc || !desc.trim()) return;
+        if (!item) return;
+        const desc = typeof item === 'string' ? item : (typeof item === 'object' && 'description' in item ? item.description : '');
+        if (!desc || typeof desc !== 'string' || !desc.trim()) return;
         const parts = desc.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
         if (parts.length <= 1) {
             const clean = desc.trim().toUpperCase();
@@ -91,8 +93,9 @@ export const normalizeGuarantees = (guarantees?: (Guarantee | { description: str
             }
         } else {
             parts.forEach(p => {
-                if (!result.some(r => r.description === p)) {
-                    result.push({ description: p });
+                const clean = p.trim().toUpperCase();
+                if (clean && !result.some(r => r.description === clean)) {
+                    result.push({ description: clean });
                 }
             });
         }
@@ -144,31 +147,33 @@ export const checkClientCompleteness = (client: Client, financiera?: Financiera)
     } else {
         let providedGuarantors = 0;
         const minGuaranteesForAval = financiera?.minGuaranteesForAval ?? 0;
-        const reqAvalGuarantees = !!financiera?.requireGuaranteesForAval;
+        const reqAvalGuarantees = !!financiera?.requireGuaranteesForAval || minGuaranteesForAval > 0;
+        const effectiveMinAvalG = minGuaranteesForAval > 0 ? minGuaranteesForAval : (reqAvalGuarantees ? 1 : 0);
         
         if (hasGuarantorsArray && client.avales) {
             providedGuarantors = client.avales.length;
             client.avales.forEach((g, i) => {
-                if (!g.name || !g.address || !g.cellphone) {
+                if (!g.name || !g.name.trim() || !g.address || !g.address.trim() || !g.cellphone) {
                     missing.push(`Datos incompletos Aval ${i+1}`);
                 }
-                if (financiera?.requireGuarantorFacade !== false && !g.facadeUrl) {
+                if (financiera?.requireGuarantorFacade !== false && !g.facadeUrl && (i > 0 || !client.avalFacadeUrl)) {
                     missing.push(`Fachada Aval ${i+1}`);
                 }
-                if (reqAvalGuarantees && minGuaranteesForAval > 0 && countEffectiveGuarantees(g.guarantees) < minGuaranteesForAval) {
-                    missing.push(`Garantías Aval ${i+1} (Mínimo: ${minGuaranteesForAval})`);
+                if (effectiveMinAvalG > 0 && countEffectiveGuarantees(g.guarantees) < effectiveMinAvalG) {
+                    missing.push(`Garantías Aval ${i+1} (Mínimo: ${effectiveMinAvalG})`);
                 }
             });
         } else if (hasSingleAval) {
             providedGuarantors = 1;
-            if (!client.avalAddress || !client.avalCellphone) {
+            if (!client.avalAddress || !client.avalAddress.trim() || !client.avalCellphone) {
                  missing.push('Datos Aval Principal');
             }
             if (financiera?.requireGuarantorFacade !== false && !client.avalFacadeUrl && !client.avalVisitTimestamp) {
                  missing.push(`Fachada Aval Principal`);
             }
-            if (reqAvalGuarantees && minGuaranteesForAval > 0 && countEffectiveGuarantees(client.avales?.[0]?.guarantees) < minGuaranteesForAval) {
-                 missing.push(`Garantías Aval Principal (Mínimo: ${minGuaranteesForAval})`);
+            const primaryGuarantees = client.avales?.[0]?.guarantees;
+            if (effectiveMinAvalG > 0 && countEffectiveGuarantees(primaryGuarantees) < effectiveMinAvalG) {
+                 missing.push(`Garantías Aval Principal (Mínimo: ${effectiveMinAvalG})`);
             }
         }
         
@@ -878,17 +883,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   };
 
   const startEditClient = (client: Client) => {
-      setEditClientName(client.name);
+      setEditClientName(client.name || '');
       setEditClientAddress(client.address || '');
       setEditClientPhone(client.cellphone || '');
       setEditClientCredit(client.creditAmount || 0);
       setEditClientSupervisorId(client.supervisorId || '');
-      setEditClientAvalName(client.avalName || '');
-      setEditClientAvalAddress(client.avalAddress || '');
-      setEditClientAvalPhone(client.avalCellphone || '');
-      setEditClientGuarantees(client.guarantees || []);
+      setEditClientAvalName(client.avales?.[0]?.name || client.avalName || '');
+      setEditClientAvalAddress(client.avales?.[0]?.address || client.avalAddress || '');
+      setEditClientAvalPhone(client.avales?.[0]?.cellphone || client.avalCellphone || '');
+      
+      const safeClientGuarantees = normalizeGuarantees(client.guarantees || []);
+      setEditClientGuarantees(safeClientGuarantees);
+      
       const primaryAvalGuarantees = client.avales?.[0]?.guarantees || [];
-      setEditClientAvalGuarantees(primaryAvalGuarantees.map((g: any) => typeof g === 'string' ? { description: g } : g));
+      const safeAvalGuarantees = normalizeGuarantees(primaryAvalGuarantees);
+      setEditClientAvalGuarantees(safeAvalGuarantees);
+      
       setNewGuaranteeDesc('');
       setNewAvalGuaranteeDesc('');
       setIsEditingClient(true);
@@ -896,70 +906,107 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const handleSaveClient = async () => {
       if (!selectedClientForDetails) return;
-      const targetSup = fullSupervisorsList.find(s => s.id === editClientSupervisorId);
-      const isChangingSup = !!editClientSupervisorId && editClientSupervisorId !== selectedClientForDetails.supervisorId;
+      try {
+          const targetSup = fullSupervisorsList.find(s => s.id === editClientSupervisorId);
+          const isChangingSup = !!editClientSupervisorId && editClientSupervisorId !== selectedClientForDetails.supervisorId;
 
-      if (isChangingSup && onMoveClientsToSupervisor) {
-          await onMoveClientsToSupervisor([selectedClientForDetails.id], editClientSupervisorId);
-      }
+          if (isChangingSup && onMoveClientsToSupervisor) {
+              await onMoveClientsToSupervisor([selectedClientForDetails.id], editClientSupervisorId);
+          }
 
-      const finalClientGuarantees = [...editClientGuarantees];
-      if (newGuaranteeDesc.trim() && !finalClientGuarantees.some(g => g.description.toUpperCase() === newGuaranteeDesc.trim().toUpperCase())) {
-          finalClientGuarantees.push({ description: newGuaranteeDesc.trim().toUpperCase() });
-      }
+          // Include any pending guarantee descriptions
+          let currentClientGuarantees = [...editClientGuarantees];
+          if (newGuaranteeDesc.trim()) {
+              const pending = normalizeGuarantees([newGuaranteeDesc.trim()]);
+              pending.forEach(p => {
+                  if (!currentClientGuarantees.some(g => (typeof g === 'string' ? g : g.description).toUpperCase() === p.description.toUpperCase())) {
+                      currentClientGuarantees.push(p);
+                  }
+              });
+          }
+          const finalClientGuarantees = normalizeGuarantees(currentClientGuarantees);
 
-      const finalAvalGuarantees = [...editClientAvalGuarantees];
-      if (newAvalGuaranteeDesc.trim() && !finalAvalGuarantees.some(g => g.description.toUpperCase() === newAvalGuaranteeDesc.trim().toUpperCase())) {
-          finalAvalGuarantees.push({ description: newAvalGuaranteeDesc.trim().toUpperCase() });
-      }
+          let currentAvalGuarantees = [...editClientAvalGuarantees];
+          if (newAvalGuaranteeDesc.trim()) {
+              const pendingAval = normalizeGuarantees([newAvalGuaranteeDesc.trim()]);
+              pendingAval.forEach(p => {
+                  if (!currentAvalGuarantees.some(g => (typeof g === 'string' ? g : g.description).toUpperCase() === p.description.toUpperCase())) {
+                      currentAvalGuarantees.push(p);
+                  }
+              });
+          }
+          const finalAvalGuarantees = normalizeGuarantees(currentAvalGuarantees);
 
-      const updatedAvales = [...(selectedClientForDetails.avales || [])];
-      if (updatedAvales.length === 0) {
-          updatedAvales.push({
-              name: editClientAvalName,
-              address: editClientAvalAddress,
-              cellphone: editClientAvalPhone,
-              facadeUrl: selectedClientForDetails.avalFacadeUrl,
-              photoUrl: selectedClientForDetails.avalPhotoUrl,
-              latitude: selectedClientForDetails.avalLatitude,
-              longitude: selectedClientForDetails.avalLongitude,
-              visitTimestamp: selectedClientForDetails.avalVisitTimestamp,
-              guarantees: finalAvalGuarantees
-          });
-      } else {
-          updatedAvales[0] = {
-              ...updatedAvales[0],
-              name: editClientAvalName,
-              address: editClientAvalAddress,
-              cellphone: editClientAvalPhone,
-              guarantees: finalAvalGuarantees
+          const updatedAvales = [...(selectedClientForDetails.avales || [])];
+          if (updatedAvales.length === 0) {
+              if (editClientAvalName.trim()) {
+                  const newAval: any = {
+                      name: editClientAvalName.trim().toUpperCase(),
+                      address: editClientAvalAddress.trim().toUpperCase(),
+                      cellphone: editClientAvalPhone.trim(),
+                      facadeUrl: selectedClientForDetails.avalFacadeUrl || '',
+                      photoUrl: selectedClientForDetails.avalPhotoUrl || '',
+                      guarantees: finalAvalGuarantees
+                  };
+                  if (selectedClientForDetails.avalLatitude !== undefined) newAval.latitude = selectedClientForDetails.avalLatitude;
+                  if (selectedClientForDetails.avalLongitude !== undefined) newAval.longitude = selectedClientForDetails.avalLongitude;
+                  if (selectedClientForDetails.avalVisitTimestamp !== undefined) newAval.visitTimestamp = selectedClientForDetails.avalVisitTimestamp;
+                  updatedAvales.push(newAval);
+              }
+          } else {
+              const existing = updatedAvales[0];
+              const updatedFirstAval: any = {
+                  ...existing,
+                  name: editClientAvalName.trim().toUpperCase(),
+                  address: editClientAvalAddress.trim().toUpperCase(),
+                  cellphone: editClientAvalPhone.trim(),
+                  guarantees: finalAvalGuarantees
+              };
+              if (updatedFirstAval.facadeUrl === undefined) updatedFirstAval.facadeUrl = '';
+              if (updatedFirstAval.photoUrl === undefined) updatedFirstAval.photoUrl = '';
+              updatedAvales[0] = updatedFirstAval;
+          }
+
+          const updatedFields: Partial<Client> = {
+              name: editClientName.trim().toUpperCase(),
+              address: editClientAddress.trim().toUpperCase(),
+              cellphone: editClientPhone.trim(),
+              creditAmount: Number(editClientCredit) || 0,
+              avalName: editClientAvalName.trim().toUpperCase(),
+              avalAddress: editClientAvalAddress.trim().toUpperCase(),
+              avalCellphone: editClientAvalPhone.trim(),
+              avales: updatedAvales,
+              guarantees: finalClientGuarantees,
+              ...(isChangingSup ? {
+                  supervisorId: editClientSupervisorId,
+                  registeredBySupervisorId: selectedClientForDetails.registeredBySupervisorId || selectedClientForDetails.supervisorId,
+                  ...(targetSup?.financieraId ? { financieraId: targetSup.financieraId } : {})
+              } : {})
           };
+
+          await onUpdateClient(selectedClientForDetails.id, updatedFields);
+          
+          const updatedClient: Client = {
+              ...selectedClientForDetails,
+              ...updatedFields
+          };
+          setSelectedClientForDetails(updatedClient);
+          setIsEditingClient(false);
+          setNewGuaranteeDesc('');
+          setNewAvalGuaranteeDesc('');
+
+          // Inform user about completeness
+          const fin = data.financieras.find(f => f.id === updatedClient.financieraId);
+          const completion = checkClientCompleteness(updatedClient, fin);
+          if (completion.isComplete) {
+              alert("¡Cliente actualizado correctamente! Su expediente ahora está 100% COMPLETO.");
+          } else {
+              alert(`Cliente actualizado correctamente. Requisitos pendientes: ${completion.missing.join(', ')}`);
+          }
+      } catch (error) {
+          console.error("Error al guardar cliente:", error);
+          alert("Error al actualizar los datos del cliente.");
       }
-
-      const updatedFields: Partial<Client> = {
-          name: editClientName,
-          address: editClientAddress,
-          cellphone: editClientPhone,
-          creditAmount: editClientCredit,
-          avalName: editClientAvalName,
-          avalAddress: editClientAvalAddress,
-          avalCellphone: editClientAvalPhone,
-          avales: updatedAvales,
-          guarantees: finalClientGuarantees,
-          ...(isChangingSup ? {
-              supervisorId: editClientSupervisorId,
-              registeredBySupervisorId: selectedClientForDetails.registeredBySupervisorId || selectedClientForDetails.supervisorId,
-              ...(targetSup?.financieraId ? { financieraId: targetSup.financieraId } : {})
-          } : {})
-      };
-
-      onUpdateClient(selectedClientForDetails.id, updatedFields);
-      setSelectedClientForDetails({
-          ...selectedClientForDetails,
-          ...updatedFields
-      });
-      setIsEditingClient(false);
-      alert("Cliente actualizado correctamente.");
   };
 
   const handleUnlinkClientFromGuarantor = async (clientId: string, avalName: string) => {
@@ -1086,7 +1133,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const handleAddGuarantee = () => {
       if (!newGuaranteeDesc.trim()) return;
-      setEditClientGuarantees([...editClientGuarantees, { description: newGuaranteeDesc.toUpperCase() }]);
+      const added = normalizeGuarantees([newGuaranteeDesc.trim()]);
+      const current = [...editClientGuarantees];
+      added.forEach(item => {
+          if (!current.some(g => (typeof g === 'string' ? g : g.description).toUpperCase() === item.description.toUpperCase())) {
+              current.push(item);
+          }
+      });
+      setEditClientGuarantees(current);
       setNewGuaranteeDesc('');
   };
 
@@ -1096,7 +1150,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
 
   const handleAddAvalGuarantee = () => {
       if (!newAvalGuaranteeDesc.trim()) return;
-      setEditClientAvalGuarantees([...editClientAvalGuarantees, { description: newAvalGuaranteeDesc.toUpperCase() }]);
+      const added = normalizeGuarantees([newAvalGuaranteeDesc.trim()]);
+      const current = [...editClientAvalGuarantees];
+      added.forEach(item => {
+          if (!current.some(g => (typeof g === 'string' ? g : g.description).toUpperCase() === item.description.toUpperCase())) {
+              current.push(item);
+          }
+      });
+      setEditClientAvalGuarantees(current);
       setNewAvalGuaranteeDesc('');
   };
 
@@ -4672,7 +4733,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                         <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
                                             <div className="flex items-center gap-3 overflow-hidden">
                                                 <div className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"></div>
-                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{g.description}</span>
+                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{typeof g === 'string' ? g : (g?.description || '')}</span>
                                             </div>
                                             <button type="button" onClick={() => removeGuarantee(i)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4" /></button>
                                         </div>
@@ -4702,7 +4763,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                         <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center">
                                             <div className="flex items-center gap-3 overflow-hidden">
                                                 <div className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0"></div>
-                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{g.description}</span>
+                                                <span className="text-xs font-black text-slate-700 uppercase truncate">{typeof g === 'string' ? g : (g?.description || '')}</span>
                                             </div>
                                             <button type="button" onClick={() => removeAvalGuarantee(i)} className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"><Trash2 className="w-4 h-4" /></button>
                                         </div>

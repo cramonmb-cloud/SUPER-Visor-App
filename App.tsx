@@ -79,6 +79,22 @@ const setLinkTag = (rel: string, href: string) => {
     link.href = href;
 };
 
+const cleanUndefined = (obj: any): any => {
+  if (Array.isArray(obj)) {
+    return obj.map(cleanUndefined);
+  } else if (obj !== null && typeof obj === 'object') {
+    const clean: any = {};
+    Object.keys(obj).forEach(key => {
+      const val = obj[key];
+      if (val !== undefined) {
+        clean[key] = cleanUndefined(val);
+      }
+    });
+    return clean;
+  }
+  return obj;
+};
+
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [syncCount, setSyncCount] = useState(0); // Para trackear que recibimos datos reales
@@ -422,7 +438,7 @@ const App: React.FC = () => {
       return;
     }
     const meta = await getDeviceMetadata();
-    await setDoc(doc(db, 'clients', qrId), { 
+    const clientPayload = cleanUndefined({ 
       ...data, 
       id: qrId, 
       supervisorId: supervisor.id, 
@@ -432,6 +448,7 @@ const App: React.FC = () => {
       weekId: currentWeek.id, // NEW: Explicitly link to current active week
       isRenewal: !!isRenewal
     });
+    await setDoc(doc(db, 'clients', qrId), clientPayload);
 
     if (isRenewal && originalClientId && originalClientId !== qrId) {
       try {
@@ -504,7 +521,7 @@ const App: React.FC = () => {
           guarantees: guarantees !== undefined ? guarantees : (existingAvales[index].guarantees || [])
       };
 
-      const updatePayload: any = {
+      const updatePayload: any = cleanUndefined({
           avales: existingAvales,
           ...(index === 0 ? {
               avalFacadeUrl: url || clientDoc?.avalFacadeUrl || existingAvales[0].facadeUrl || '',
@@ -513,7 +530,7 @@ const App: React.FC = () => {
               avalLongitude: lng || clientDoc?.avalLongitude || existingAvales[0].longitude || 0,
               ...(isComplete ? { avalVisitTimestamp: Date.now() } : {})
           } : {})
-      };
+      });
 
       await updateDoc(clientRef, updatePayload);
   };
@@ -948,13 +965,22 @@ const App: React.FC = () => {
     if (currentUser?.role === UserRole.SUPERVISOR) {
         // Check if supervisor has permission
         const sup = currentUser.data as Supervisor;
-        // If canEditClients is undefined, default to false (or true? User request implies default might be false or selective)
-        // "solo a ella le doy el permiso" implies default is false.
-        if (!sup.canEditClients) return;
+        if (!sup.canEditClients) {
+            alert("No tienes permiso para editar clientes. Contacta a un administrador.");
+            return;
+        }
     } else if (currentUser?.role !== UserRole.ADMIN && currentUser?.role !== UserRole.VIEWER) {
+        alert("No tienes permiso para editar clientes.");
         return;
     }
-    await updateDoc(doc(db, 'clients', clientId), data);
+    try {
+      const sanitized = cleanUndefined(data);
+      await updateDoc(doc(db, 'clients', clientId), sanitized);
+    } catch (error) {
+      console.error("Error al actualizar cliente en Firestore:", error);
+      alert("Hubo un error al actualizar los datos en la base de datos.");
+      throw error;
+    }
   };
 
   const moveClientsToWeek = async (clientIds: string[], targetWeekId: string) => {

@@ -1236,9 +1236,18 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             const finalAval3FacadeUrl = aval3FacadeUrl || resolvedAval3.facadeUrl || '';
             const finalAval3PhotoUrl = aval3PhotoUrl || resolvedAval3.photoUrl || '';
 
-            const normalizeGuaranteeList = (list: string[], pending?: string): string[] => {
-                const raw = [...list];
-                if (pending && pending.trim()) {
+            const normalizeGuaranteeList = (list: any[], pending?: string): string[] => {
+                const raw: string[] = [];
+                if (Array.isArray(list)) {
+                    list.forEach(item => {
+                        if (!item) return;
+                        const desc = typeof item === 'string' ? item : (item?.description || '');
+                        if (desc && typeof desc === 'string' && desc.trim()) {
+                            raw.push(desc.trim());
+                        }
+                    });
+                }
+                if (pending && typeof pending === 'string' && pending.trim()) {
                     raw.push(pending.trim());
                 }
                 const result: string[] = [];
@@ -1246,7 +1255,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     const parts = item.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
                     if (parts.length > 1) {
                         parts.forEach(p => {
-                            if (!result.includes(p)) result.push(p);
+                            if (p && !result.includes(p)) result.push(p);
                         });
                     } else {
                         const clean = item.trim().toUpperCase();
@@ -1261,54 +1270,71 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             const finalAval3Guarantees = normalizeGuaranteeList(aval3Guarantees, newAval3Guarantee);
             const finalClientGuarantees = normalizeGuaranteeList(guarantees, newGuarantee);
 
+            const cleanGuarantor = (g: any): Guarantor => {
+                const clean: any = {
+                    name: (g.name || '').toUpperCase().trim(),
+                    address: (g.address || '').toUpperCase().trim(),
+                    cellphone: (g.cellphone || '').trim(),
+                    facadeUrl: g.facadeUrl || '',
+                    photoUrl: g.photoUrl || '',
+                    guarantees: (g.guarantees || []).map((gt: any) => ({
+                        description: typeof gt === 'string' ? gt.toUpperCase().trim() : (gt?.description || '').toUpperCase().trim()
+                    })).filter((gt: any) => gt.description.length > 0)
+                };
+                if (g.latitude !== undefined && g.latitude !== null) clean.latitude = g.latitude;
+                if (g.longitude !== undefined && g.longitude !== null) clean.longitude = g.longitude;
+                if (g.visitTimestamp !== undefined && g.visitTimestamp !== null) clean.visitTimestamp = g.visitTimestamp;
+                return clean;
+            };
+
             const currentAvales: Guarantor[] = [
-                {
-                    name: avalName.toUpperCase(),
-                    address: avalAddress.toUpperCase(),
+                cleanGuarantor({
+                    name: avalName,
+                    address: avalAddress,
                     cellphone: avalCellphone,
                     facadeUrl: finalAval1FacadeUrl,
                     photoUrl: finalAval1PhotoUrl,
                     guarantees: finalAval1Guarantees.map(g => ({ description: g.toUpperCase() }))
-                }
+                })
             ];
             if (requiredAvales >= 2) {
-                currentAvales.push({
-                    name: aval2Name.toUpperCase(),
-                    address: aval2Address.toUpperCase(),
+                currentAvales.push(cleanGuarantor({
+                    name: aval2Name,
+                    address: aval2Address,
                     cellphone: aval2Cellphone,
                     facadeUrl: finalAval2FacadeUrl,
                     photoUrl: finalAval2PhotoUrl,
                     guarantees: finalAval2Guarantees.map(g => ({ description: g.toUpperCase() }))
-                });
+                }));
             }
             if (requiredAvales >= 3) {
-                currentAvales.push({
-                    name: aval3Name.toUpperCase(),
-                    address: aval3Address.toUpperCase(),
+                currentAvales.push(cleanGuarantor({
+                    name: aval3Name,
+                    address: aval3Address,
                     cellphone: aval3Cellphone,
                     facadeUrl: finalAval3FacadeUrl,
                     photoUrl: finalAval3PhotoUrl,
                     guarantees: finalAval3Guarantees.map(g => ({ description: g.toUpperCase() }))
-                });
+                }));
             }
 
             const clientDataToRegister: Partial<Client> = {
-                name: clientName.toUpperCase(),
-                address: clientAddress.toUpperCase(),
-                creditAmount: Number(creditAmount),
-                cellphone: cellphone,
-                facadeUrl: facadeUrl,
-                clientPhotoUrl: clientPhotoUrl,
-                guarantees: finalClientGuarantees.map(g => ({ description: g.toUpperCase() })),
-                avalName: avalName.toUpperCase(),
-                avalAddress: avalAddress.toUpperCase(),
-                avalCellphone,
-                avalFacadeUrl: finalAval1FacadeUrl,
-                avalPhotoUrl: finalAval1PhotoUrl,
+                name: clientName.trim().toUpperCase(),
+                address: clientAddress.trim().toUpperCase(),
+                creditAmount: Number(creditAmount) || 0,
+                cellphone: cellphone.trim(),
+                facadeUrl: facadeUrl || '',
+                clientPhotoUrl: clientPhotoUrl || '',
+                guarantees: finalClientGuarantees.map(g => ({ description: g.trim().toUpperCase() })),
+                avalName: avalName.trim().toUpperCase(),
+                avalAddress: avalAddress.trim().toUpperCase(),
+                avalCellphone: avalCellphone.trim(),
+                avalFacadeUrl: finalAval1FacadeUrl || '',
+                avalPhotoUrl: finalAval1PhotoUrl || '',
                 avales: currentAvales,
                 latitude: loc.lat,
                 longitude: loc.lng,
-                comments: clientComments.toUpperCase() // NEW: Include comments
+                comments: clientComments.trim().toUpperCase() // NEW: Include comments
             };
 
             const registeredClientObj: Client = {
@@ -1330,7 +1356,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             }
 
             setView('list'); resetForm();
-        } catch (e) { alert("Error de registro"); } finally { setIsUploading(false); }
+        } catch (e) { alert("Error de registro: " + (e instanceof Error ? e.message : String(e))); } finally { setIsUploading(false); }
     };
 
     const handleAvalVisit = async () => {
@@ -1460,9 +1486,18 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 }
             }
 
-            const normalizeGuaranteeList = (list: string[], pending?: string): string[] => {
-                const raw = [...list];
-                if (pending && pending.trim()) {
+            const normalizeGuaranteeList = (list: any[], pending?: string): string[] => {
+                const raw: string[] = [];
+                if (Array.isArray(list)) {
+                    list.forEach(item => {
+                        if (!item) return;
+                        const desc = typeof item === 'string' ? item : (item?.description || '');
+                        if (desc && typeof desc === 'string' && desc.trim()) {
+                            raw.push(desc.trim());
+                        }
+                    });
+                }
+                if (pending && typeof pending === 'string' && pending.trim()) {
                     raw.push(pending.trim());
                 }
                 const result: string[] = [];
@@ -1470,7 +1505,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     const parts = item.split(/[,;\n]+/).map(s => s.trim().toUpperCase()).filter(s => s.length >= 2);
                     if (parts.length > 1) {
                         parts.forEach(p => {
-                            if (!result.includes(p)) result.push(p);
+                            if (p && !result.includes(p)) result.push(p);
                         });
                     } else {
                         const clean = item.trim().toUpperCase();
@@ -1485,10 +1520,27 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             const finalAval3Guarantees = normalizeGuaranteeList(aval3Guarantees, newAval3Guarantee);
             const finalClientGuarantees = normalizeGuaranteeList(guarantees, newGuarantee);
 
+            const cleanGuarantor = (g: any): Guarantor => {
+                const clean: any = {
+                    name: (g.name || '').toUpperCase().trim(),
+                    address: (g.address || '').toUpperCase().trim(),
+                    cellphone: (g.cellphone || '').trim(),
+                    facadeUrl: g.facadeUrl || '',
+                    photoUrl: g.photoUrl || '',
+                    guarantees: (g.guarantees || []).map((gt: any) => ({
+                        description: typeof gt === 'string' ? gt.toUpperCase().trim() : (gt?.description || '').toUpperCase().trim()
+                    })).filter((gt: any) => gt.description.length > 0)
+                };
+                if (g.latitude !== undefined && g.latitude !== null) clean.latitude = g.latitude;
+                if (g.longitude !== undefined && g.longitude !== null) clean.longitude = g.longitude;
+                if (g.visitTimestamp !== undefined && g.visitTimestamp !== null) clean.visitTimestamp = g.visitTimestamp;
+                return clean;
+            };
+
             const currentAvales: Guarantor[] = [
-                {
-                    name: avalName.toUpperCase(),
-                    address: avalAddress.toUpperCase(),
+                cleanGuarantor({
+                    name: avalName,
+                    address: avalAddress,
                     cellphone: avalCellphone,
                     facadeUrl: aval1IsClient ? (aval1SelectedClient?.facadeUrl || '') : (avalFacadeUrl || editingClient.avales?.[0]?.facadeUrl || editingClient.avalFacadeUrl || ''),
                     photoUrl: aval1IsClient ? (aval1SelectedClient?.clientPhotoUrl || '') : (avalPhotoUrl || editingClient.avales?.[0]?.photoUrl || editingClient.avalPhotoUrl || ''),
@@ -1496,12 +1548,13 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     longitude: editingClient.avales?.[0]?.longitude || editingClient.avalLongitude,
                     visitTimestamp: editingClient.avales?.[0]?.visitTimestamp || editingClient.avalVisitTimestamp,
                     guarantees: finalAval1Guarantees.map(g => ({ description: g.toUpperCase() }))
-                }
+                })
             ];
+
             if (requiredAvales >= 2 || (editingClient.avales && editingClient.avales.length > 1 && aval2Name)) {
-                currentAvales.push({
-                    name: aval2Name.toUpperCase(),
-                    address: aval2Address.toUpperCase(),
+                currentAvales.push(cleanGuarantor({
+                    name: aval2Name,
+                    address: aval2Address,
                     cellphone: aval2Cellphone,
                     facadeUrl: aval2IsClient ? (aval2SelectedClient?.facadeUrl || '') : (aval2FacadeUrl || editingClient.avales?.[1]?.facadeUrl || ''),
                     photoUrl: aval2IsClient ? (aval2SelectedClient?.clientPhotoUrl || '') : (aval2PhotoUrl || editingClient.avales?.[1]?.photoUrl || ''),
@@ -1509,12 +1562,12 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     longitude: editingClient.avales?.[1]?.longitude,
                     visitTimestamp: editingClient.avales?.[1]?.visitTimestamp,
                     guarantees: finalAval2Guarantees.map(g => ({ description: g.toUpperCase() }))
-                });
+                }));
             }
             if (requiredAvales >= 3 || (editingClient.avales && editingClient.avales.length > 2 && aval3Name)) {
-                currentAvales.push({
-                    name: aval3Name.toUpperCase(),
-                    address: aval3Address.toUpperCase(),
+                currentAvales.push(cleanGuarantor({
+                    name: aval3Name,
+                    address: aval3Address,
                     cellphone: aval3Cellphone,
                     facadeUrl: aval3FacadeUrl || editingClient.avales?.[2]?.facadeUrl || '',
                     photoUrl: aval3PhotoUrl || editingClient.avales?.[2]?.photoUrl || '',
@@ -1522,30 +1575,56 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                     longitude: editingClient.avales?.[2]?.longitude,
                     visitTimestamp: editingClient.avales?.[2]?.visitTimestamp,
                     guarantees: finalAval3Guarantees.map(g => ({ description: g.toUpperCase() }))
-                });
+                }));
             }
 
             const updates: Partial<Client> = {
-                name: clientName.toUpperCase(),
-                address: clientAddress.toUpperCase(),
-                creditAmount: Number(creditAmount),
-                cellphone: cellphone,
-                avalName: avalName.toUpperCase(),
-                avalAddress: avalAddress.toUpperCase(),
-                avalCellphone: avalCellphone,
+                name: clientName.trim().toUpperCase(),
+                address: clientAddress.trim().toUpperCase(),
+                creditAmount: Number(creditAmount) || 0,
+                cellphone: cellphone.trim(),
+                avalName: avalName.trim().toUpperCase(),
+                avalAddress: avalAddress.trim().toUpperCase(),
+                avalCellphone: avalCellphone.trim(),
                 avales: currentAvales,
-                guarantees: finalClientGuarantees.map(g => ({ description: g.toUpperCase() })),
-                comments: clientComments.toUpperCase(),
-                facadeUrl,
-                clientPhotoUrl,
-                avalFacadeUrl,
-                avalPhotoUrl
+                guarantees: finalClientGuarantees.map(g => ({ description: g.trim().toUpperCase() })),
+                comments: clientComments.trim().toUpperCase(),
+                facadeUrl: facadeUrl || '',
+                clientPhotoUrl: clientPhotoUrl || '',
+                avalFacadeUrl: currentAvales[0]?.facadeUrl || avalFacadeUrl || '',
+                avalPhotoUrl: currentAvales[0]?.photoUrl || avalPhotoUrl || ''
             };
 
             await onUpdateClient(editingClient.id, updates);
+
+            // Update selectedClientHistory if currently open
+            if (selectedClientHistory && selectedClientHistory.id === editingClient.id) {
+                setSelectedClientHistory({
+                    ...selectedClientHistory,
+                    ...updates
+                });
+            }
+
+            // Check completion status and notify supervisor
+            const updatedClientForCheck: Client = {
+                ...editingClient,
+                ...updates
+            } as Client;
+            const completion = checkClientCompleteness(updatedClientForCheck, supervisorFinanciera);
+            if (completion.isComplete) {
+                alert("¡Cliente actualizado con éxito! Su expediente ahora está 100% COMPLETO.");
+            } else {
+                alert(`Cliente actualizado correctamente. Pendiente por completar: ${completion.missing.join(', ')}`);
+            }
+
             setEditingClient(null);
             resetForm();
-        } catch (e) { alert("Error al actualizar"); } finally { setIsUploading(false); }
+        } catch (e) {
+            console.error("Error al actualizar cliente:", e);
+            alert("Error al actualizar: " + (e instanceof Error ? e.message : String(e)));
+        } finally {
+            setIsUploading(false);
+        }
     };
 
     const confirmDeleteClient = async (client: Client) => {
@@ -1562,7 +1641,7 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
     const openEditModal = (client: Client) => {
         setEditingClient(client);
-        setClientName(client.name);
+        setClientName(client.name || '');
         setClientAddress(client.address || '');
         setCreditAmount(client.creditAmount?.toString() || '');
         setCellphone(client.cellphone || '');
@@ -1570,22 +1649,25 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
         setAvalAddress(client.avales?.[0]?.address || client.avalAddress || '');
         setAvalCellphone(client.avales?.[0]?.cellphone || client.avalCellphone || '');
 
-        // NEW: Populate multiple avales and their guarantees if they exist
+        // Populate multiple avales and their guarantees safely
         if (client.avales && client.avales.length > 0) {
             setAvalName(client.avales[0].name || client.avalName || '');
             setAvalAddress(client.avales[0].address || client.avalAddress || '');
             setAvalCellphone(client.avales[0].cellphone || client.avalCellphone || '');
-            setAval1Guarantees(client.avales[0].guarantees ? client.avales[0].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')) : []);
+            const rawA1G = client.avales[0].guarantees || [];
+            setAval1Guarantees(rawA1G.map((g: any) => typeof g === 'string' ? g : (g?.description || '')).filter(Boolean));
             if (client.avales.length > 1) {
-                setAval2Name(client.avales[1].name);
+                setAval2Name(client.avales[1].name || '');
                 setAval2Address(client.avales[1].address || '');
                 setAval2Cellphone(client.avales[1].cellphone || '');
-                setAval2Guarantees(client.avales[1].guarantees ? client.avales[1].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')) : []);
+                const rawA2G = client.avales[1].guarantees || [];
+                setAval2Guarantees(rawA2G.map((g: any) => typeof g === 'string' ? g : (g?.description || '')).filter(Boolean));
                 if (client.avales.length > 2) {
-                    setAval3Name(client.avales[2].name);
+                    setAval3Name(client.avales[2].name || '');
                     setAval3Address(client.avales[2].address || '');
                     setAval3Cellphone(client.avales[2].cellphone || '');
-                    setAval3Guarantees(client.avales[2].guarantees ? client.avales[2].guarantees.map((g: any) => typeof g === 'string' ? g : (g.description || '')) : []);
+                    const rawA3G = client.avales[2].guarantees || [];
+                    setAval3Guarantees(rawA3G.map((g: any) => typeof g === 'string' ? g : (g?.description || '')).filter(Boolean));
                 }
             } else {
                 setAval2Name(''); setAval2Address(''); setAval2Cellphone(''); setAval2Guarantees([]);
@@ -1597,8 +1679,14 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             setAval3Name(''); setAval3Address(''); setAval3Cellphone(''); setAval3Guarantees([]);
         }
 
-        setGuarantees(client.guarantees ? client.guarantees.map(g => g.description) : []);
-        setClientComments(client.comments || ''); // NEW: Set comments
+        // Safe mapping of client guarantees (handles both strings and objects)
+        const rawClientG = client.guarantees || [];
+        setGuarantees(rawClientG.map((g: any) => typeof g === 'string' ? g : (g?.description || '')).filter(Boolean));
+        setNewGuarantee('');
+        setNewAval1Guarantee('');
+        setNewAval2Guarantee('');
+        setNewAval3Guarantee('');
+        setClientComments(client.comments || ''); // Set comments
 
         // Set previews if they exist
         setFacadePreview(client.facadeUrl || null);
@@ -1650,7 +1738,10 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
                 .map(it => ({ description: it }));
             setAvalGuarantees([...avalGuarantees, ...newItems]);
         } else {
-            setAvalGuarantees([...avalGuarantees, { description: newAvalGuarantee.trim().toUpperCase() }]);
+            const clean = newAvalGuarantee.trim().toUpperCase();
+            if (!avalGuarantees.some(g => g.description.toUpperCase() === clean)) {
+                setAvalGuarantees([...avalGuarantees, { description: clean }]);
+            }
         }
         setNewAvalGuarantee('');
     };
@@ -1663,7 +1754,10 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
             const unique = items.filter(it => !guarantees.includes(it));
             setGuarantees([...guarantees, ...unique]);
         } else {
-            setGuarantees([...guarantees, newGuarantee.trim().toUpperCase()]);
+            const clean = newGuarantee.trim().toUpperCase();
+            if (!guarantees.includes(clean)) {
+                setGuarantees([...guarantees, clean]);
+            }
         }
         setNewGuarantee('');
     };
