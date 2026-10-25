@@ -9,7 +9,7 @@ import JSZip from "jszip";
 import { VisitsMap } from './VisitsMap';
 import { CachedImage } from './CachedImage';
 import { AdminPanelV2 } from './AdminPanelV2';
-import { removeAccents, getClientLoanCycle, ClientLoanCycle } from '../constants';
+import { removeAccents, getClientLoanCycle, ClientLoanCycle, WEEKDAY_NAMES, CYCLE_DAY_OPTIONS } from '../constants';
 import { VERSION } from '../version';
 
 interface AdminPanelProps {
@@ -30,8 +30,8 @@ interface AdminPanelProps {
   onAddSystemUser: (name: string, pin: string, supervisorIds: string[], canCreateSupervisors: boolean, canManageWeeks: boolean, assignedFinancieraIds: string[], role: UserRole) => void;
   onUpdateSystemUser: (id: string, name: string, pin: string, supervisorIds: string[], canCreateSupervisors: boolean, canManageWeeks: boolean, assignedFinancieraIds: string[], role: UserRole) => void;
   onDeleteSystemUser: (id: string) => void;
-  onAddFinanciera: (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string) => void;
-  onUpdateFinanciera: (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string) => void;
+  onAddFinanciera: (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string, cycleStartDay?: number) => void;
+  onUpdateFinanciera: (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string, cycleStartDay?: number) => void;
   onDeleteFinanciera: (id: string) => void;
   onDeleteQRBatch: (batchId: string) => void;
   onBatchUpdateSupervisors: (ids: string[], data: Partial<Supervisor>) => void;
@@ -263,6 +263,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
   const [finMaxAvalRegistrations, setFinMaxAvalRegistrations] = useState<number>(2);
   const [finMaxClientAsAval, setFinMaxClientAsAval] = useState<number>(2);
   const [finBirthdayPetUrl, setFinBirthdayPetUrl] = useState('');
+  const [finCycleStartDay, setFinCycleStartDay] = useState<number>(6);
   const [ruleMin, setRuleMin] = useState('');
   const [ruleMax, setRuleMax] = useState('');
   const [ruleGuarantors, setRuleGuarantors] = useState('1');
@@ -1311,10 +1312,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       e.preventDefault();
       if (!finName) return;
       if (editingFin) {
-          onUpdateFinanciera(editingFin.id, finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto, finRequireGuarantorFacade, finMaxClientActiveLoans, finMaxAvalRegistrations, finMaxClientAsAval, finBirthdayPetUrl);
+          onUpdateFinanciera(editingFin.id, finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto, finRequireGuarantorFacade, finMaxClientActiveLoans, finMaxAvalRegistrations, finMaxClientAsAval, finBirthdayPetUrl, finCycleStartDay);
           setEditingFin(null);
       } else {
-          onAddFinanciera(finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto, finRequireGuarantorFacade, finMaxClientActiveLoans, finMaxAvalRegistrations, finMaxClientAsAval, finBirthdayPetUrl);
+          onAddFinanciera(finName, finMinGuarantees, finRequireClientPhoto, finRequireFacade, finLogoUrl, finGuarantorRules, finLogoGifUrl, finRequireGuaranteesForAval, finMinGuaranteesForAval, finRequireGuarantorPhoto, finRequireGuarantorFacade, finMaxClientActiveLoans, finMaxAvalRegistrations, finMaxClientAsAval, finBirthdayPetUrl, finCycleStartDay);
       }
       setFinName('');
       setFinMinGuarantees(0);
@@ -1330,6 +1331,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setFinLogoUrl('');
       setFinLogoGifUrl('');
       setFinBirthdayPetUrl('');
+      setFinCycleStartDay(6);
       setFinGuarantorRules([]);
   };
 
@@ -1350,6 +1352,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
       setFinMaxAvalRegistrations(fin.maxAvalRegistrations ?? 2);
       setFinMaxClientAsAval(fin.maxClientAsAval ?? 2);
       setFinBirthdayPetUrl(fin.birthdayPetUrl || '');
+      setFinCycleStartDay(typeof fin.cycleStartDay === 'number' ? fin.cycleStartDay : 6);
   };
 
   const addGuarantorRule = () => {
@@ -3649,6 +3652,33 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                       <p className="text-[9px] text-slate-400 font-medium px-1 italic">Imagen que se mostrará en los cumpleaños de esta financiera</p>
                                                   </div>
 
+                                                  {/* SELECTOR DÍA DE APERTURA DE NUEVO CICLO */}
+                                                  <div className="p-4 bg-gradient-to-br from-indigo-50/70 to-blue-50/50 rounded-2xl border border-indigo-150 space-y-2">
+                                                      <div className="flex items-center justify-between">
+                                                          <label className="text-[10px] font-black text-indigo-700 uppercase tracking-widest flex items-center gap-1.5">
+                                                             <Calendar className="w-4 h-4 text-indigo-600" /> Día de Apertura de Nuevo Ciclo
+                                                          </label>
+                                                          <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full">
+                                                             Cada {WEEKDAY_NAMES[finCycleStartDay]}
+                                                          </span>
+                                                      </div>
+                                                      <div className="relative">
+                                                          <select 
+                                                              value={finCycleStartDay} 
+                                                              onChange={e => setFinCycleStartDay(parseInt(e.target.value))}
+                                                              className="w-full p-3.5 bg-white border border-indigo-200 rounded-xl font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 text-xs appearance-none cursor-pointer pr-10 shadow-sm"
+                                                          >
+                                                              {CYCLE_DAY_OPTIONS.map(opt => (
+                                                                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                                              ))}
+                                                          </select>
+                                                          <ChevronDown className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-indigo-400 pointer-events-none" />
+                                                      </div>
+                                                      <p className="text-[9px] text-slate-500 font-medium px-1 leading-relaxed">
+                                                          Selecciona en qué día de la semana debe activarse el nuevo ciclo para que las nuevas supervisiones queden registradas en él (ej. si eliges <strong>Jueves</strong>, el ciclo de la siguiente semana se abre desde el jueves).
+                                                      </p>
+                                                  </div>
+
                                                  <div className="grid grid-cols-1 gap-4">
                                                     <div className="space-y-1.5">
                                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Garantías Mínimas</label>
@@ -3831,7 +3861,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                 {editingFin && (
                                                     <button 
                                                         type="button" 
-                                                        onClick={() => { setEditingFin(null); setFinName(''); setFinMinGuarantees(0); setFinRequireClientPhoto(false); setFinRequireFacade(false); setFinRequireGuaranteesForAval(false); setFinMinGuaranteesForAval(0); setFinRequireGuarantorPhoto(false); setFinRequireGuarantorFacade(true); setFinMaxClientActiveLoans(1); setFinMaxAvalRegistrations(2); setFinMaxClientAsAval(2); setFinLogoUrl(''); setFinLogoGifUrl(''); }} 
+                                                        onClick={() => { setEditingFin(null); setFinName(''); setFinMinGuarantees(0); setFinRequireClientPhoto(false); setFinRequireFacade(false); setFinRequireGuaranteesForAval(false); setFinMinGuaranteesForAval(0); setFinRequireGuarantorPhoto(false); setFinRequireGuarantorFacade(true); setFinMaxClientActiveLoans(1); setFinMaxAvalRegistrations(2); setFinMaxClientAsAval(2); setFinLogoUrl(''); setFinLogoGifUrl(''); setFinBirthdayPetUrl(''); setFinCycleStartDay(6); }} 
                                                         className="flex-1 bg-white text-slate-400 py-4 rounded-2xl font-black text-[10px] uppercase border border-slate-200 hover:bg-slate-50 transition-all"
                                                     >
                                                         Cancelar
@@ -3870,28 +3900,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                                 </div>
                                                             </div>
                                                             <div className="flex gap-1">
-                                                                <button onClick={() => { 
-                                                                    setEditingFin(f); 
-                                                                    setFinName(f.name); 
-                                                                    setFinMinGuarantees(f.minGuarantees || 0); 
-                                                                    setFinRequireClientPhoto(f.requireClientPhoto || false); 
-                                                                    setFinRequireFacade(f.requireFacade || false); 
-                                                                    setFinRequireGuaranteesForAval(f.requireGuaranteesForAval || false); 
-                                                                    setFinMinGuaranteesForAval(f.minGuaranteesForAval || 0); 
-                                                                    setFinRequireGuarantorPhoto(f.requireGuarantorPhoto || false); 
-                                                                    setFinRequireGuarantorFacade(f.requireGuarantorFacade !== false); 
-                                                                    setFinMaxClientActiveLoans(f.maxClientActiveLoans ?? 1); 
-                                                                    setFinMaxAvalRegistrations(f.maxAvalRegistrations ?? 2); 
-                                                                    setFinMaxClientAsAval(f.maxClientAsAval ?? 2); 
-                                                                    setFinLogoUrl(f.logoUrl || ''); 
-                                                                    setFinLogoGifUrl(f.logoGifUrl || ''); 
-                                                                    setFinGuarantorRules(f.guarantorRules || []); 
-                                                                }} className="p-2.5 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all"><Pencil className="w-4 h-4"/></button>
+                                                                <button onClick={() => startEditFin(f)} className="p-2.5 text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all" title="Editar Financiera"><Pencil className="w-4 h-4"/></button>
                                                                 <button onClick={() => { if(confirm("¿Eliminar financiera?")) onDeleteFinanciera(f.id); }} className="p-2.5 text-red-400 hover:bg-red-50 rounded-xl transition-all"><Trash2 className="w-4 h-4"/></button>
                                                             </div>
                                                         </div>
 
                                                         <div className="flex flex-wrap gap-2">
+                                                            <span className="px-2.5 py-1 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
+                                                                <Calendar className="w-2.5 h-2.5 text-indigo-600" />
+                                                                Ciclo abre: {WEEKDAY_NAMES[f.cycleStartDay ?? 6]}
+                                                            </span>
                                                             <span className="px-2.5 py-1 bg-slate-50 border border-slate-100 text-slate-500 rounded-xl text-[8px] font-black uppercase tracking-widest flex items-center gap-1">
                                                                 <ShieldCheck className="w-2.5 h-2.5" />
                                                                 Mín G: {f.minGuarantees ?? 'Global'}
@@ -3926,6 +3944,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = (props) => {
                                                             <div className="space-y-0.5">
                                                                 <span className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Límite Avales (Cliente)</span>
                                                                 <span className="block text-xs font-black text-slate-700">{f.maxClientAsAval ?? 2} v.</span>
+                                                            </div>
+                                                            <div className="space-y-0.5 col-span-2 bg-indigo-50/50 p-2.5 rounded-xl border border-indigo-100/60">
+                                                                <span className="block text-[8px] font-black text-indigo-500 uppercase tracking-widest flex items-center gap-1">
+                                                                    <Calendar className="w-2.5 h-2.5" /> Rotación de Ciclo Semanal
+                                                                </span>
+                                                                <span className="block text-xs font-black text-indigo-800">Se abre cada {WEEKDAY_NAMES[f.cycleStartDay ?? 6]}</span>
                                                             </div>
                                                         </div>
                                                     </div>

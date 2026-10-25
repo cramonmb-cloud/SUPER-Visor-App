@@ -73,6 +73,7 @@ export interface Financiera {
   maxAvalRegistrations?: number; // NEW: Maximum registrations an aval can have
   maxClientAsAval?: number; // NEW: Maximum registrations a client can have as an aval
   birthdayPetUrl?: string; // NEW: Image URL for birthday mascot per Financiera
+  cycleStartDay?: number; // NEW: Day of week to start/open the new cycle (0=Dom, 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb). Default: 6 (Sábado)
 }
 
 export interface Guarantee {

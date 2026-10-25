@@ -80,3 +80,15 @@ export const getClientLoanCycle = (
     currentWeekName: currentActiveWeek?.name
   };
 };
+
+export const WEEKDAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+export const CYCLE_DAY_OPTIONS = [
+  { value: 6, label: 'Sábado (Estándar / Fin de semana)' },
+  { value: 5, label: 'Viernes' },
+  { value: 4, label: 'Jueves (Recomendado para supervisión previa)' },
+  { value: 3, label: 'Miércoles' },
+  { value: 2, label: 'Martes' },
+  { value: 1, label: 'Lunes' },
+  { value: 0, label: 'Domingo' }
+];

@@ -853,10 +853,11 @@ export const SupervisorPanel: React.FC<SupervisorPanelProps> = ({
 
     const otherClients = filteredSupervisorClients.filter(c => {
         // Is not in current week
-        const inCurrent = currentWeek && c.registeredAt >= currentWeek.startDate && c.registeredAt <= (currentWeek.endDate || (currentWeek.startDate + 7 * 24 * 60 * 60 * 1000));
+        const inCurrent = currentWeek && (c.weekId ? c.weekId === currentWeek.id : (c.registeredAt >= currentWeek.startDate && c.registeredAt <= (currentWeek.endDate || (currentWeek.startDate + 7 * 24 * 60 * 60 * 1000))));
         if (inCurrent) return false;
         // Is not in any other week
         const inAnyWeek = allWeeks.some(w => {
+            if (c.weekId) return c.weekId === w.id;
             const end = w.endDate || (w.startDate + 7 * 24 * 60 * 60 * 1000);
             return c.registeredAt >= w.startDate && c.registeredAt <= end;
         });

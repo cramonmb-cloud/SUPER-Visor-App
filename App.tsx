@@ -328,7 +328,7 @@ const App: React.FC = () => {
       }
   }, [appState.supervisors, currentUser]);
 
-  // Auto-rotación de ciclos (Sábado a Viernes) por financiera al vencer la semana en curso
+  // Auto-rotación de ciclos por financiera según el día configurado (cycleStartDay)
   const isAdvancingCycleRef = useRef(false);
   useEffect(() => {
       if (appState.weeks.length === 0 || appState.financieras.length === 0 || isAdvancingCycleRef.current) return;
@@ -342,16 +342,24 @@ const App: React.FC = () => {
                   const finWeeks = appState.weeks.filter(w => w.financieraId === fin.id);
                   const activeWeek = finWeeks.find(w => w.isActive);
 
-                  // Si la semana activa ya venció (now > endDate)
-                  if (activeWeek && now > activeWeek.endDate) {
-                      // 1. Desactivar la semana anterior
-                      await updateDoc(doc(db, 'weeks', activeWeek.id), { isActive: false });
+                  if (!activeWeek) continue;
 
-                      // 2. Calcular las fechas de la nueva semana (Sábado a Viernes)
-                      // El inicio es el Sábado inmediatamente posterior (1 ms después de endDate)
-                      const nextStartDate = new Date(activeWeek.endDate + 1);
-                      nextStartDate.setHours(0, 0, 0, 0);
+                  // Día configurado de inicio/apertura de nuevo ciclo (0=Dom, ..., 4=Jue, 5=Vie, 6=Sáb). Default: 6 (Sábado)
+                  const cycleStartDay = typeof fin.cycleStartDay === 'number' ? fin.cycleStartDay : 6;
+                  const daysBeforeSaturday = (6 - cycleStartDay + 7) % 7;
 
+                  // El siguiente ciclo oficial de sábado a viernes
+                  // Próximo sábado (00:00:00)
+                  const nextStartDate = new Date(activeWeek.endDate + 1);
+                  nextStartDate.setHours(0, 0, 0, 0);
+
+                  // Fecha/hora de corte a partir de la cual debe abrirse el nuevo ciclo
+                  const cutoffDate = new Date(nextStartDate);
+                  cutoffDate.setDate(cutoffDate.getDate() - daysBeforeSaturday);
+                  cutoffDate.setHours(0, 0, 0, 0);
+
+                  // Si ya alcanzamos o pasamos la fecha de corte para abrir el nuevo ciclo
+                  if (now >= cutoffDate.getTime()) {
                       const nextEndDate = new Date(nextStartDate);
                       nextEndDate.setDate(nextStartDate.getDate() + 6);
                       nextEndDate.setHours(23, 59, 59, 999);
@@ -359,16 +367,29 @@ const App: React.FC = () => {
                       const id = `W-${nextStartDate.getTime()}-${fin.id}`;
                       const name = `SEMANA DEL ${nextStartDate.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).toUpperCase()} AL ${nextEndDate.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).toUpperCase()}`;
 
-                      // 3. Crear y activar el nuevo ciclo
-                      await setDoc(doc(db, 'weeks', id), {
-                          id,
-                          name,
-                          startDate: nextStartDate.getTime(),
-                          endDate: nextEndDate.getTime(),
-                          isActive: true,
-                          createdAt: Date.now(),
-                          financieraId: fin.id
-                      });
+                      // 1. Desactivar la semana anterior (y cualquier otra de esta financiera que estuviera activa)
+                      const allActive = finWeeks.filter(w => w.isActive);
+                      for (const w of allActive) {
+                          if (w.id !== id) {
+                              await updateDoc(doc(db, 'weeks', w.id), { isActive: false });
+                          }
+                      }
+
+                      // 2. Si ya existe en finWeeks, reactivarla; si no, crearla
+                      const existingWeek = finWeeks.find(w => w.id === id || w.startDate === nextStartDate.getTime());
+                      if (existingWeek) {
+                          await updateDoc(doc(db, 'weeks', existingWeek.id), { isActive: true });
+                      } else {
+                          await setDoc(doc(db, 'weeks', id), {
+                              id,
+                              name,
+                              startDate: nextStartDate.getTime(),
+                              endDate: nextEndDate.getTime(),
+                              isActive: true,
+                              createdAt: Date.now(),
+                              financieraId: fin.id
+                          });
+                      }
                   }
               }
           } catch (error) {
@@ -848,7 +869,7 @@ const App: React.FC = () => {
     }
   };
 
-  const addFinanciera = async (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string) => { 
+  const addFinanciera = async (name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string, cycleStartDay?: number) => { 
     await addDoc(collection(db, 'financieras'), { 
       name: name.toUpperCase(), 
       createdAt: Date.now(), 
@@ -865,11 +886,12 @@ const App: React.FC = () => {
       maxClientActiveLoans: maxClientActiveLoans ?? 1, // Defaults to 1
       maxAvalRegistrations: maxAvalRegistrations ?? 2, // Defaults to 2
       maxClientAsAval: maxClientAsAval ?? 2, // Defaults to 2
-      birthdayPetUrl: birthdayPetUrl || ''
+      birthdayPetUrl: birthdayPetUrl || '',
+      cycleStartDay: typeof cycleStartDay === 'number' ? cycleStartDay : 6
     }); 
   };
   
-  const updateFinanciera = async (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string) => { 
+  const updateFinanciera = async (id: string, name: string, minGuarantees?: number, requireClientPhoto?: boolean, requireFacade?: boolean, logoUrl?: string, guarantorRules?: GuarantorRange[], logoGifUrl?: string, requireGuaranteesForAval?: boolean, minGuaranteesForAval?: number, requireGuarantorPhoto?: boolean, requireGuarantorFacade?: boolean, maxClientActiveLoans?: number, maxAvalRegistrations?: number, maxClientAsAval?: number, birthdayPetUrl?: string, cycleStartDay?: number) => { 
     await updateDoc(doc(db, 'financieras', id), { 
       name: name.toUpperCase(), 
       minGuarantees, 
@@ -885,7 +907,8 @@ const App: React.FC = () => {
       maxClientActiveLoans: maxClientActiveLoans ?? 1,
       maxAvalRegistrations: maxAvalRegistrations ?? 2,
       maxClientAsAval: maxClientAsAval ?? 2,
-      birthdayPetUrl: birthdayPetUrl || ''
+      birthdayPetUrl: birthdayPetUrl || '',
+      cycleStartDay: typeof cycleStartDay === 'number' ? cycleStartDay : 6
     }); 
   };
   const deleteFinanciera = async (id: string) => { await deleteDoc(doc(db, 'financieras', id)); };
