@@ -95,6 +95,19 @@ const cleanUndefined = (obj: any): any => {
   return obj;
 };
 
+// Helper to execute batch updates in chunks of 400 to respect Firestore 500 writes limit
+const commitBatchOperations = async (
+  operations: ((batch: ReturnType<typeof writeBatch>) => void)[]
+) => {
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < operations.length; i += CHUNK_SIZE) {
+    const chunk = operations.slice(i, i + CHUNK_SIZE);
+    const batch = writeBatch(db);
+    chunk.forEach(op => op(batch));
+    await batch.commit();
+  }
+};
+
 const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [syncCount, setSyncCount] = useState(0); // Para trackear que recibimos datos reales
@@ -476,11 +489,10 @@ const App: React.FC = () => {
         // Query previous visits
         const visitsQuery = query(collection(db, 'visits'), where('clientId', '==', originalClientId));
         const visitsSnap = await getDocs(visitsQuery);
-        const batch = writeBatch(db);
-        visitsSnap.forEach((visitDoc) => {
+        const ops = visitsSnap.docs.map(visitDoc => (batch: ReturnType<typeof writeBatch>) => {
           batch.update(visitDoc.ref, { clientId: qrId });
         });
-        await batch.commit();
+        await commitBatchOperations(ops);
 
         // Delete old client document
         await deleteDoc(doc(db, 'clients', originalClientId));
@@ -763,11 +775,10 @@ const App: React.FC = () => {
       const visitsQuery = query(collection(db, 'visits'), where('clientId', '==', sourceOldClientId));
       const visitsSnap = await getDocs(visitsQuery);
       if (!visitsSnap.empty) {
-        const batch = writeBatch(db);
-        visitsSnap.forEach((visitDoc) => {
+        const ops = visitsSnap.docs.map(visitDoc => (batch: ReturnType<typeof writeBatch>) => {
           batch.update(visitDoc.ref, { clientId: targetNewClientId });
         });
-        await batch.commit();
+        await commitBatchOperations(ops);
       }
 
       // 2. Inherit photos, avales, or comments if missing in the new record
@@ -963,18 +974,16 @@ const App: React.FC = () => {
     if (!fortunaId) return;
 
     try {
-      const batch = writeBatch(db);
-      let count = 0;
+      const ops: ((batch: ReturnType<typeof writeBatch>) => void)[] = [];
       appState.weeks.forEach(week => {
         if (!week.financieraId) {
-          batch.update(doc(db, 'weeks', week.id), { financieraId: fortunaId });
-          count++;
+          ops.push(batch => batch.update(doc(db, 'weeks', week.id), { financieraId: fortunaId }));
         }
       });
 
-      if (count > 0) {
-        await batch.commit();
-        alert(`Se migraron ${count} semanas a 'LA FORTUNA'.`);
+      if (ops.length > 0) {
+        await commitBatchOperations(ops);
+        alert(`Se migraron ${ops.length} semanas a 'LA FORTUNA'.`);
       } else {
         alert("No hay semanas sin financiera asignada.");
       }
@@ -1013,21 +1022,25 @@ const App: React.FC = () => {
     if (!targetWeek) return;
 
     try {
-      const batch = writeBatch(db);
+      const ops: ((batch: ReturnType<typeof writeBatch>) => void)[] = [];
       
       clientIds.forEach(id => {
-        batch.update(doc(db, 'clients', id), { 
-            weekId: targetWeekId,
-            registeredAt: targetWeek.startDate + 1000 // Add 1 second to ensure it falls within the week
+        ops.push(batch => {
+          batch.update(doc(db, 'clients', id), { 
+              weekId: targetWeekId,
+              registeredAt: targetWeek.startDate + 1000 // Add 1 second to ensure it falls within the week
+          });
         });
       });
       
       const visitsToMove = appState.visits.filter(v => clientIds.includes(v.clientId));
       visitsToMove.forEach(v => {
-        batch.update(doc(db, 'visits', v.id), { weekId: targetWeekId });
+        ops.push(batch => {
+          batch.update(doc(db, 'visits', v.id), { weekId: targetWeekId });
+        });
       });
 
-      await batch.commit();
+      await commitBatchOperations(ops);
     } catch (error) {
       console.error("Error moving clients to week:", error);
       alert("Hubo un error al mover los clientes.");
@@ -1038,11 +1051,10 @@ const App: React.FC = () => {
     if (currentUser?.role !== UserRole.ADMIN) return;
     
     try {
-      const batch = writeBatch(db);
-      clientIds.forEach(id => {
+      const ops = clientIds.map(id => (batch: ReturnType<typeof writeBatch>) => {
         batch.update(doc(db, 'clients', id), { financieraId: targetFinancieraId });
       });
-      await batch.commit();
+      await commitBatchOperations(ops);
     } catch (error) {
       console.error("Error moving clients to financiera:", error);
       alert("Hubo un error al mover los clientes de financiera.");
@@ -1056,7 +1068,7 @@ const App: React.FC = () => {
     if (!targetSupervisor) return;
 
     try {
-      const batch = writeBatch(db);
+      const ops: ((batch: ReturnType<typeof writeBatch>) => void)[] = [];
       clientIds.forEach(id => {
         const client = appState.clients.find(c => c.id === id);
         const updateData: Record<string, any> = {
@@ -1070,16 +1082,16 @@ const App: React.FC = () => {
         if (targetSupervisor.financieraId) {
           updateData.financieraId = targetSupervisor.financieraId;
         }
-        batch.update(doc(db, 'clients', id), updateData);
+        ops.push(batch => batch.update(doc(db, 'clients', id), updateData));
       });
 
       // Also update visits associated with these clients so the new supervisor sees their visits in real-time
       const visitsToMove = appState.visits.filter(v => clientIds.includes(v.clientId));
       visitsToMove.forEach(v => {
-        batch.update(doc(db, 'visits', v.id), { supervisorId: targetSupervisorId });
+        ops.push(batch => batch.update(doc(db, 'visits', v.id), { supervisorId: targetSupervisorId }));
       });
 
-      await batch.commit();
+      await commitBatchOperations(ops);
     } catch (error) {
       console.error("Error moving clients to supervisor:", error);
       alert("Hubo un error al reasignar la supervisora.");

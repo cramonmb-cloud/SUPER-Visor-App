@@ -1,8 +1,7 @@
-const CACHE_NAME = 'visor-app-v7.32';
+const CACHE_NAME = 'visor-app-v7.42';
 const urlsToCache = [
   '/',
   '/index.html',
-  '/index.css',
   '/manifest.json',
   '/route-map-visit.png'
 ];

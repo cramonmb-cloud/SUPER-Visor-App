@@ -3,11 +3,14 @@ import { DeviceMetadata } from '../types';
 export const getDeviceMetadata = async (): Promise<DeviceMetadata> => {
   let ip = 'Unknown';
   try {
-    const response = await fetch('https://api.ipify.org?format=json');
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2500);
+    const response = await fetch('https://api.ipify.org?format=json', { signal: controller.signal });
+    clearTimeout(timeoutId);
     const data = await response.json();
     ip = data.ip;
   } catch (e) {
-    console.error('Could not fetch IP:', e);
+    console.warn('Could not fetch IP (timed out or offline):', e);
   }
 
   const ua = navigator.userAgent;
